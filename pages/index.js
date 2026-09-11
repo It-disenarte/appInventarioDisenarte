@@ -38,6 +38,7 @@ export default function Home() {
   const [editCatForm, setEditCatForm] = useState({ name: '', unit: '' });
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'produccion' });
   const [busy, setBusy] = useState(false);
+  const [showNewUserPw, setShowNewUserPw] = useState(false);
 
   const loadAll = useCallback(async () => {
     const me = await api('/api/auth/me');
@@ -302,7 +303,8 @@ export default function Home() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input placeholder="Nombre" value={newUser.name} onChange={(e) => setNewUser((u) => ({ ...u, name: e.target.value }))} style={{ flex: 1.5, minWidth: 140, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 14 }} />
                 <input placeholder="Correo" value={newUser.email} onChange={(e) => setNewUser((u) => ({ ...u, email: e.target.value }))} style={{ flex: 1.5, minWidth: 160, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 14 }} />
-                <input placeholder="Contraseña" value={newUser.password} onChange={(e) => setNewUser((u) => ({ ...u, password: e.target.value }))} style={{ flex: 1, minWidth: 120, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 14 }} />
+                <input placeholder="Contraseña" value={newUser.password} onChange={(e) => setNewUser((u) => ({ ...u, password: e.target.value }))} type={showNewUserPw ? 'text' : 'password'} style={{ flex: 1, minWidth: 120, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 14 }} />
+                <button type="button" onClick={() => setShowNewUserPw((v) => !v)} style={{ border: 'none', background: 'none', color: COLORS.muted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{showNewUserPw ? 'Ocultar' : 'Ver'}</button>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                 {ROLE_KEYS.map((r) => (
