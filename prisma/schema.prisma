@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String
+  createdAt    DateTime @default(now())
+}
+
+model Group {
+  id         Int        @id @default(autoincrement())
+  label      String
+  area       String
+  color      String
+  order      Int        @default(0)
+  categories Category[]
+}
+
+model Category {
+  id      Int      @id @default(autoincrement())
+  name    String
+  unit    String
+  schema  Json     @default("[]")
+  groupId Int
+  group   Group    @relation(fields: [groupId], references: [id])
+  items   Item[]
+}
+
+model Item {
+  id              Int        @id @default(autoincrement())
+  name            String
+  qty             Int
+  reorder         Int
+  characteristics Json       @default("{}")
+  categoryId      Int
+  category        Category   @relation(fields: [categoryId], references: [id])
+  movements       Movement[]
+  createdAt       DateTime   @default(now())
+}
+
+model Movement {
+  id      Int      @id @default(autoincrement())
+  itemId  Int
+  item    Item     @relation(fields: [itemId], references: [id])
+  tipo    String
+  delta   Int
+  antes   Int
+  despues Int
+  usuario String
+  fecha   DateTime @default(now())
+}
