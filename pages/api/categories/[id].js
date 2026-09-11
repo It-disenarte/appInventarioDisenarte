@@ -22,7 +22,8 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    if (category.items.length > 0) return res.status(400).json({ error: 'No puedes eliminar una categoría con artículos.' });
+    await prisma.movement.deleteMany({ where: { item: { categoryId: id } } });
+    await prisma.item.deleteMany({ where: { categoryId: id } });
     await prisma.category.delete({ where: { id } });
     return res.status(200).json({ ok: true });
   }

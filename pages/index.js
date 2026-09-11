@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
+import LoadingScreen from '../components/LoadingScreen';
 
 const COLORS = { primary: '#A53692', teal: '#5CC6D0', bg: '#FDF8FB', border: '#F1EEF0', muted: '#96989A', text: '#1D1B1E', danger: '#B3261E', light: '#FBD9F2' };
 const ROLE_LABEL = { produccion: 'Producción', diseno: 'Diseño', super: 'Súper', admin: 'Admin' };
@@ -36,6 +37,7 @@ export default function Home() {
   const [editingCat, setEditingCat] = useState(null);
   const [editCatForm, setEditCatForm] = useState({ name: '', unit: '' });
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'produccion' });
+  const [busy, setBusy] = useState(false);
 
   const loadAll = useCallback(async () => {
     const me = await api('/api/auth/me');
@@ -63,63 +65,61 @@ export default function Home() {
   }
 
   function showError(e) { setError(e.message || String(e)); setTimeout(() => setError(''), 4000); }
+  async function withBusy(fn) { setBusy(true); try { await fn(); } catch (e) { showError(e); } finally { setBusy(false); } }
 
   async function adjustItem(item, delta) {
-    try { await api(`/api/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ delta }) }); await loadAll(); }
-    catch (e) { showError(e); }
+    await withBusy(async () => { await api(`/api/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ delta }) }); await loadAll(); });
   }
   async function deleteItemRow(item) {
     if (!window.confirm(`¿Eliminar "${item.name}"?`)) return;
-    try { await api(`/api/items/${item.id}`, { method: 'DELETE' }); await loadAll(); }
-    catch (e) { showError(e); }
+    await withBusy(async () => { await api(`/api/items/${item.id}`, { method: 'DELETE' }); await loadAll(); });
   }
   async function addItemToCategory(categoryId) {
     const form = newItemForms[categoryId] || {};
     if (!form.nombre) return;
-    try {
+    await withBusy(async () => {
       await api('/api/items', { method: 'POST', body: JSON.stringify({ categoryId, name: form.nombre, qty: form.cantidad, reorder: form.reorden }) });
       setNewItemForms((s) => ({ ...s, [categoryId]: { nombre: '', cantidad: '', reorden: '' } }));
       await loadAll();
-    } catch (e) { showError(e); }
+    });
   }
   async function addCategory() {
     if (!newCat.name.trim()) return;
-    try {
+    await withBusy(async () => {
       await api('/api/categories', { method: 'POST', body: JSON.stringify({ groupId, name: newCat.name, unit: newCat.unit || 'piezas' }) });
       setNewCat({ name: '', unit: '' });
       await loadAll();
-    } catch (e) { showError(e); }
+    });
   }
   async function saveEditCategory(cat) {
-    try {
+    await withBusy(async () => {
       await api(`/api/categories/${cat.id}`, { method: 'PATCH', body: JSON.stringify({ name: editCatForm.name, unit: editCatForm.unit }) });
       setEditingCat(null);
       await loadAll();
-    } catch (e) { showError(e); }
+    });
   }
   async function deleteCategoryRow(cat) {
-    try { await api(`/api/categories/${cat.id}`, { method: 'DELETE' }); await loadAll(); }
-    catch (e) { showError(e); }
+    const count = groupItems.filter((it) => it.categoryId === cat.id).length;
+    if (!window.confirm(count > 0 ? `"${cat.name}" tiene ${count} artículo(s). ¿Eliminar la categoría y todos sus artículos?` : `¿Eliminar la categoría "${cat.name}"?`)) return;
+    await withBusy(async () => { await api(`/api/categories/${cat.id}`, { method: 'DELETE' }); await loadAll(); });
   }
   async function setRole(u, role) {
-    try { await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ role }) }); await loadAll(); }
-    catch (e) { showError(e); }
+    await withBusy(async () => { await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ role }) }); await loadAll(); });
   }
   async function deleteUserRow(u) {
     if (!window.confirm(`¿Eliminar a ${u.name}?`)) return;
-    try { await api(`/api/users/${u.id}`, { method: 'DELETE' }); await loadAll(); }
-    catch (e) { showError(e); }
+    await withBusy(async () => { await api(`/api/users/${u.id}`, { method: 'DELETE' }); await loadAll(); });
   }
   async function addUserAccount() {
     if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password) return;
-    try {
+    await withBusy(async () => {
       await api('/api/users', { method: 'POST', body: JSON.stringify(newUser) });
       setNewUser({ name: '', email: '', password: '', role: 'produccion' });
       await loadAll();
-    } catch (e) { showError(e); }
+    });
   }
 
-  if (loading || !user) return <div style={{ fontFamily: "'Outfit', system-ui, sans-serif", padding: 40, color: COLORS.muted }}>Cargando...</div>;
+  if (loading || !user) return <LoadingScreen label="Cargando inventario..." />;
 
   const currentGroup = groups.find((g) => g.id === groupId) || groups[0];
   const groupCanModify = currentGroup ? canModify(user.role, currentGroup.area) : false;
@@ -134,7 +134,13 @@ export default function Home() {
   if (user.role === 'admin') navDefs.push({ key: 'admin', label: 'Administración' });
 
   return (
-    <div style={{ fontFamily: "'Outfit', system-ui, sans-serif", minHeight: '100vh', background: COLORS.bg, color: COLORS.text }}>
+    <div style={{ fontFamily: "'Outfit', system-ui, sans-serif", minHeight: '100vh', background: COLORS.bg, color: COLORS.text, position: 'relative' }}>
+      {busy && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(253,248,251,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ width: 40, height: 40, border: '4px solid #F1EEF0', borderTopColor: COLORS.primary, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: `1px solid ${COLORS.border}`, position: 'sticky', top: 0, background: COLORS.bg, zIndex: 5 }}>
         <div style={{ fontSize: 22, fontWeight: 600, color: COLORS.primary }}>Inventario</div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -252,7 +258,7 @@ export default function Home() {
                       {groupCanModify && (
                         <div style={{ display: 'flex', gap: 12 }}>
                           <button onClick={() => { setEditingCat(cat.id); setEditCatForm({ name: cat.name, unit: cat.unit }); }} style={{ border: 'none', background: 'none', fontSize: 13, cursor: 'pointer' }}>Editar</button>
-                          <button onClick={() => deleteCategoryRow(cat)} disabled={count > 0} style={{ border: 'none', background: 'none', color: count > 0 ? '#C7C5C7' : COLORS.danger, fontSize: 13, cursor: 'pointer' }}>Eliminar</button>
+                          <button onClick={() => deleteCategoryRow(cat)} style={{ border: 'none', background: 'none', color: COLORS.danger, fontSize: 13, cursor: 'pointer' }}>Eliminar</button>
                         </div>
                       )}
                     </div>
