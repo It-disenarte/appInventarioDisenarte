@@ -49,8 +49,10 @@ export default function Home() {
     if (g.groups.length) setGroupId((prev) => prev || g.groups[0].id);
     const it = await api('/api/items');
     setItems(it.items);
-    const mv = await api('/api/movements');
-    setMovements(mv.movements);
+    if (me.user.role === 'admin' || me.user.role === 'super') {
+      const mv = await api('/api/movements');
+      setMovements(mv.movements);
+    }
     if (me.user.role === 'admin') {
       const us = await api('/api/users');
       setUsers(us.users);
@@ -107,6 +109,14 @@ export default function Home() {
   async function setRole(u, role) {
     await withBusy(async () => { await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ role }) }); await loadAll(); });
   }
+  async function deleteMovementRow(mv) {
+    if (!window.confirm('¿Eliminar este movimiento?')) return;
+    await withBusy(async () => { await api(`/api/movements?id=${mv.id}`, { method: 'DELETE' }); await loadAll(); });
+  }
+  async function clearMovements() {
+    if (!window.confirm('¿Eliminar TODOS los movimientos? Esta acción no se puede deshacer.')) return;
+    await withBusy(async () => { await api('/api/movements', { method: 'DELETE' }); await loadAll(); });
+  }
   async function deleteUserRow(u) {
     if (!window.confirm(`¿Eliminar a ${u.name}?`)) return;
     await withBusy(async () => { await api(`/api/users/${u.id}`, { method: 'DELETE' }); await loadAll(); });
@@ -127,9 +137,10 @@ export default function Home() {
   const groupItems = items.filter((it) => it.category.groupId === (currentGroup ? currentGroup.id : null));
   const groupMovements = movements.filter((mv) => mv.item.category.groupId === (currentGroup ? currentGroup.id : null));
 
+  const canSeeMovements = user.role === 'admin' || user.role === 'super';
   const navDefs = [
     { key: 'inventarios', label: 'Inventarios' },
-    { key: 'movimientos', label: 'Movimientos' },
+    ...(canSeeMovements ? [{ key: 'movimientos', label: 'Movimientos' }] : []),
     { key: 'categorias', label: 'Categorías' },
   ];
   if (user.role === 'admin') navDefs.push({ key: 'admin', label: 'Administración' });
@@ -218,21 +229,29 @@ export default function Home() {
           </div>
         )}
 
-        {section === 'movimientos' && (
-          <div style={{ background: '#fff', borderRadius: 16, padding: '4px 20px' }}>
-            {groupMovements.length === 0 && <div style={{ textAlign: 'center', padding: '60px 20px', color: COLORS.muted }}>Aún no hay movimientos.</div>}
-            {groupMovements.map((mv) => (
-              <div key={mv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: `1px solid ${COLORS.border}` }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{mv.item.name}</div>
-                  <div style={{ fontSize: 12, color: COLORS.muted }}>{mv.item.category.name} · {new Date(mv.fecha).toLocaleString('es-MX')} · {mv.usuario}</div>
+        {section === 'movimientos' && canSeeMovements && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+              <button onClick={clearMovements} disabled={groupMovements.length === 0} style={{ border: 'none', background: 'none', color: groupMovements.length === 0 ? '#C7C5C7' : COLORS.danger, fontSize: 13, fontWeight: 600, cursor: groupMovements.length === 0 ? 'default' : 'pointer' }}>Vaciar movimientos</button>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 16, padding: '4px 20px' }}>
+              {groupMovements.length === 0 && <div style={{ textAlign: 'center', padding: '60px 20px', color: COLORS.muted }}>Aún no hay movimientos.</div>}
+              {groupMovements.map((mv) => (
+                <div key={mv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${COLORS.border}` }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{mv.item.name}</div>
+                    <div style={{ fontSize: 12, color: COLORS.muted }}>{mv.item.category.name} · {new Date(mv.fecha).toLocaleString('es-MX')} · {mv.usuario}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: mv.delta > 0 ? COLORS.teal : COLORS.primary }}>{mv.delta > 0 ? `+${mv.delta}` : mv.delta}</div>
+                      <div style={{ fontSize: 11, color: COLORS.muted }}>{mv.antes} → {mv.despues}</div>
+                    </div>
+                    <button onClick={() => deleteMovementRow(mv)} style={{ border: 'none', background: 'none', color: COLORS.danger, fontSize: 12, cursor: 'pointer' }}>Eliminar</button>
+                  </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: mv.delta > 0 ? COLORS.teal : COLORS.primary }}>{mv.delta > 0 ? `+${mv.delta}` : mv.delta}</div>
-                  <div style={{ fontSize: 11, color: COLORS.muted }}>{mv.antes} → {mv.despues}</div>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
