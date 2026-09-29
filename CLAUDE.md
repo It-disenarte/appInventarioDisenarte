@@ -13,7 +13,7 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - PWA instalable (manifest + service worker network-first que cachea solo páginas/estáticos, nunca `/api`).
 
 ## Estructura
-- `pages/index.js`: toda la app autenticada en una sola página. Tabs por grupo de inventario y secciones: Inventarios, Movimientos, Categorías, Grupos (admin/super) y Administración. Tras cada acción solo se recarga lo que cambió (`reload(...)`) o se actualiza el estado local.
+- `pages/index.js`: toda la app autenticada en una sola página. Navegación con menú lateral (`components/SideMenu.js`): fijo en pantallas de 1024px o más, desplegable con ☰ en celular. Lista los grupos (Inventarios), las vistas del grupo (Artículos, Movimientos, Categorías) y Administración (Grupos para admin/super, Usuarios para admin). Sin barras de pestañas con scroll horizontal. Tras cada acción solo se recarga lo que cambió (`reload(...)`) o se actualiza el estado local.
 - `pages/login.js`: login con toggle "Ver/Ocultar" contraseña. No mostrar credenciales en pantalla.
 - `pages/_document.js`: fuente Outfit (Google Fonts), manifest, íconos, meta tags de Apple.
 - `pages/_app.js`: registra `/sw.js`.
@@ -24,6 +24,8 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - `pages/api/movements.js`: solo admin/super. GET; DELETE `?id=` borra uno, `?groupId=` vacía un grupo; sin parámetros responde 400 (ya no borra todo).
 - `pages/api/users/index.js` y `[id].js`: solo admin. Listar, crear, cambiar rol, eliminar. Rol validado contra `ROLE_KEYS`. El admin no puede borrarse ni quitarse el rol admin.
 - `lib/prisma.js`, `lib/auth.js`, `lib/permissions.js` (también lo importa el frontend), `lib/characteristics.js`
+- Asistente de uso: `components/GuideTour.js` (ventanas flotantes que resaltan elementos marcados con `data-guide="..."`) y `lib/guideSteps.js` (textos por pantalla, adaptados al rol). Si `User.showGuide` es true, cada pantalla muestra su guía la primera vez que se visita en la sesión (cada vez que se abre la app). Se desactiva desde la propia guía o en Mi perfil (`PATCH /api/profile`). El botón "?" del encabezado la muestra siempre. Al agregar botones o secciones nuevas, marcar el elemento con `data-guide` y agregar su paso en `lib/guideSteps.js`.
+- `pages/api/profile.js`: PATCH `{ showGuide }` del propio usuario (cualquier rol).
 - `components/ConfirmDialog.js`: diálogo de confirmación con la marca. No usar `window.confirm`/`alert`; en `index.js` se usa `if (!(await ask({ title, message, confirmLabel, danger }))) return;`.
 - `components/LoadingScreen.js`: carga inicial. `index.js` además muestra un overlay `busy` en cada acción.
 - `prisma/schema.prisma`: User, Group(area), Category(unit, schema Json), Item(qty, reorder, characteristics Json, codigo, metraje, proveedor, descripcion: texto opcional; caducidad: fecha opcional, la UI avisa desde 30 días antes), Movement(tipo, delta, antes, despues, usuario, fecha).

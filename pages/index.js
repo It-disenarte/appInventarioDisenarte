@@ -1,7 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import LoadingScreen from '../components/LoadingScreen';
 import ConfirmDialog from '../components/ConfirmDialog';
+import SideMenu, { SIDE_MENU_WIDTH } from '../components/SideMenu';
+import GuideTour from '../components/GuideTour';
+import { generalSteps, sectionSteps } from '../lib/guideSteps';
 import { canModify, canManageGroups, ROLE_KEYS, AREA_KEYS } from '../lib/permissions';
 
 const COLORS = { primary: '#A53692', secondary: '#7C07A6', teal: '#5CC6D0', bg: '#F7F7F8', border: '#E4E4E5', muted: '#96989A', text: '#1D1B1E', danger: '#B3261E', light: '#F6E4F2' };
@@ -80,11 +83,72 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [showNewUserPw, setShowNewUserPw] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isWide, setIsWide] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  // En pantallas anchas el menú lateral queda fijo; en celular se despliega con el botón ☰.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const update = () => setIsWide(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   // Confirmación con el diálogo de la marca: `if (!(await ask({...}))) return;`
   function ask(opts) { return new Promise((resolve) => setConfirmState({ ...opts, resolve })); }
   const answerConfirm = useCallback((ok) => { setConfirmState((s) => { if (s) s.resolve(ok); return null; }); }, []);
   const cancelConfirm = useCallback(() => answerConfirm(false), [answerConfirm]);
+
+  // Asistente de uso. Mientras user.showGuide sea true, cada pantalla muestra su guía
+  // la primera vez que se visita en esta sesión (o sea, cada vez que se abre la app).
+  const [guideSteps, setGuideSteps] = useState(null);
+  const seenGuides = useRef(new Set());
+  const closeGuide = useCallback(() => setGuideSteps(null), []);
+  const setMenuFromGuide = useCallback((open) => setMenuOpen(open), []);
+
+  function guideContext() {
+    const g = groups.find((x) => x.id === groupId) || groups[0];
+    return {
+      isWide, role: user.role,
+      canModify: g ? canModify(user.role, g.area) : false,
+      canSeeMovements: seesMovements(user.role), canEditGroups: canManageGroups(user.role), isAdmin: user.role === 'admin',
+      groupLabel: g ? g.label : '', groupArea: g ? g.area : '',
+      hasGroups: groups.length > 0,
+      hasCategories: g ? g.categories.length > 0 : false,
+      hasItems: g ? items.some((it) => it.category.groupId === g.id) : false,
+      hasMovements: g ? movements.some((mv) => mv.item.category.groupId === g.id) : false,
+    };
+  }
+  function openGuide(sec, withGeneral) {
+    const ctx = guideContext();
+    const steps = [...(withGeneral ? generalSteps(ctx) : []), ...sectionSteps(sec, ctx)]
+      .filter((s) => !s.target || document.querySelector(`[data-guide="${s.target}"]`))
+      .filter((s) => !s.list || s.list.length > 0 || s.body);
+    seenGuides.current.add(sec);
+    if (withGeneral) seenGuides.current.add('general');
+    if (steps.length) setGuideSteps(steps);
+  }
+  async function setGuidePreference(showGuide) {
+    try {
+      const r = await api('/api/profile', { method: 'PATCH', body: JSON.stringify({ showGuide }) });
+      setUser((u) => ({ ...u, showGuide: r.user.showGuide }));
+      if (showGuide) seenGuides.current.clear();
+    } catch (e) { showError(e); }
+  }
+  function replayGuideEverywhere() {
+    seenGuides.current.clear();
+    openGuide(section, true);
+  }
+
+  useEffect(() => {
+    if (loading || !user || !user.showGuide || guideSteps || busy || confirmState) return;
+    if (seenGuides.current.has(section)) return;
+    const withGeneral = !seenGuides.current.has('general');
+    const t = setTimeout(() => openGuide(section, withGeneral), 500);
+    return () => clearTimeout(t);
+  });
 
   const applyGroups = useCallback((list) => {
     setGroups(list);
@@ -258,14 +322,24 @@ export default function Home() {
 
   const canSeeMovements = seesMovements(user.role);
   const canEditGroups = canManageGroups(user.role);
-  const navDefs = [
-    { key: 'inventarios', label: 'Inventarios' },
+  // Vistas del grupo seleccionado y vistas de administración (menú lateral).
+  const views = [
+    { key: 'inventarios', label: 'Artículos' },
     ...(canSeeMovements ? [{ key: 'movimientos', label: 'Movimientos' }] : []),
     { key: 'categorias', label: 'Categorías' },
-    ...(canEditGroups ? [{ key: 'grupos', label: 'Grupos' }] : []),
   ];
-  if (user.role === 'admin') navDefs.push({ key: 'admin', label: 'Administración' });
-  const showGroupTabs = section !== 'admin' && section !== 'grupos';
+  const adminViews = [
+    ...(canEditGroups ? [{ key: 'grupos', label: 'Grupos' }] : []),
+    ...(user.role === 'admin' ? [{ key: 'admin', label: 'Usuarios' }] : []),
+  ];
+  const currentView = views.find((v) => v.key === section);
+  const headerTitle = currentView ? (currentGroup ? currentGroup.label : 'Inventario') : section === 'perfil' ? 'Mi perfil' : (adminViews.find((v) => v.key === section) || {}).label;
+  function selectGroup(id) {
+    setGroupId(id);
+    if (!currentView) setSection('inventarios');
+    setMenuOpen(false);
+  }
+  function selectSection(key) { setSection(key); setMenuOpen(false); }
   const noGroups = !currentGroup && ['inventarios', 'movimientos', 'categorias'].includes(section);
 
   function groupForm(form, setForm) {
@@ -318,6 +392,9 @@ export default function Home() {
 
   return (
     <div style={{ fontFamily: "'Outfit', system-ui, sans-serif", minHeight: '100vh', background: COLORS.bg, color: COLORS.text, position: 'relative' }}>
+      {guideSteps && (
+        <GuideTour steps={guideSteps} onClose={closeGuide} onDisable={() => setGuidePreference(false)} onMenu={setMenuFromGuide} />
+      )}
       {confirmState && (
         <ConfirmDialog title={confirmState.title} message={confirmState.message} confirmLabel={confirmState.confirmLabel} danger={confirmState.danger} onConfirm={() => answerConfirm(true)} onCancel={cancelConfirm} />
       )}
@@ -327,36 +404,29 @@ export default function Home() {
         </div>
       )}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: `1px solid ${COLORS.border}`, position: 'sticky', top: 0, background: COLORS.bg, zIndex: 5 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <img src="/isotipo.png" alt="Diseñarte México" style={{ width: 32, height: 32 }} />
-          <div style={{ fontSize: 20, fontWeight: 600, color: COLORS.text }}>Inventario</div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, marginLeft: 12 }}>
-          <div style={{ textAlign: 'right', minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
-            <div style={{ fontSize: 11, color: COLORS.muted, whiteSpace: 'nowrap' }}>{ROLE_LABEL[user.role]}</div>
-          </div>
-          <button onClick={logout} style={{ border: 'none', background: 'none', color: COLORS.muted, fontSize: 12, cursor: 'pointer' }}>Salir</button>
-        </div>
-      </div>
+      <SideMenu
+        open={menuOpen} persistent={isWide} onClose={closeMenu}
+        groups={groups} groupId={currentGroup ? currentGroup.id : null} onSelectGroup={selectGroup}
+        views={views} adminViews={adminViews} section={section} onSelectSection={selectSection}
+        user={user} roleLabel={ROLE_LABEL[user.role]} onLogout={logout}
+      />
 
-      {showGroupTabs && groups.length > 0 && (
-        <div style={{ display: 'flex', gap: 4, padding: '0 12px', borderBottom: `1px solid ${COLORS.border}`, overflowX: 'auto' }}>
-          {groups.map((g) => (
-            <button key={g.id} onClick={() => setGroupId(g.id)} style={{ border: 'none', background: 'none', padding: '14px 14px 12px', fontSize: 14, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', color: g.id === currentGroup?.id ? g.color : COLORS.muted, borderBottom: g.id === currentGroup?.id ? `3px solid ${g.color}` : '3px solid transparent' }}>
-              {g.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 4, padding: '10px 12px', borderBottom: `1px solid ${COLORS.border}`, overflowX: 'auto' }}>
-        {navDefs.map((n) => (
-          <button key={n.key} onClick={() => setSection(n.key)} style={{ border: 'none', background: section === n.key ? COLORS.light : 'transparent', color: section === n.key ? COLORS.primary : COLORS.muted, borderRadius: 20, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {n.label}
+      <div style={{ paddingLeft: isWide ? SIDE_MENU_WIDTH : 0 }}>
+      <div style={{ height: 64, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', borderBottom: `1px solid ${COLORS.border}`, position: 'sticky', top: 0, background: COLORS.bg, zIndex: 5 }}>
+        {!isWide && (
+          <button data-guide="menu-button" onClick={() => setMenuOpen(true)} aria-label="Abrir menú" style={{ border: 'none', background: 'none', padding: 6, marginLeft: -6, cursor: 'pointer', color: COLORS.text, display: 'flex' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
-        ))}
+        )}
+        <div data-guide="header-title" style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
+          {currentView && currentGroup && <span style={{ width: 10, height: 10, borderRadius: 5, background: currentGroup.color, flexShrink: 0 }} />}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{headerTitle}</div>
+            {currentView && <div style={{ fontSize: 12, color: COLORS.muted }}>{currentView.label}</div>}
+          </div>
+        </div>
+        <button data-guide="help-button" onClick={() => openGuide(section, false)} aria-label="Ver guía de esta pantalla" title="Ver guía de esta pantalla" style={{ width: 32, height: 32, borderRadius: 16, border: `1px solid ${COLORS.border}`, background: '#fff', color: COLORS.primary, fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0 }}>?</button>
+        {!isWide && <img src="/isotipo.png" alt="Diseñarte México" style={{ width: 28, height: 28, flexShrink: 0 }} />}
       </div>
 
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 16 }}>
@@ -377,7 +447,7 @@ export default function Home() {
               const setForm = (patch) => setNewItemForms((s) => ({ ...s, [cat.id]: { ...(s[cat.id] || EMPTY_ITEM_FORM), ...patch } }));
               return (
                 <div key={cat.id} style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.muted, padding: '8px 4px' }}>{cat.name} · {cat.unit}</div>
+                  <div data-guide="cat-heading" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.muted, padding: '8px 4px' }}>{cat.name} · {cat.unit}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {catItems.map((it) => {
                       const low = it.qty <= it.reorder;
@@ -385,7 +455,7 @@ export default function Home() {
                       const expiry = expiryInfo(it.caducidad);
                       const isEditing = editingItem === it.id;
                       return (
-                        <div key={it.id} style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                        <div key={it.id} data-guide="item-card" style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 15, fontWeight: 600 }}>{it.name}</div>
@@ -396,13 +466,13 @@ export default function Home() {
                                 {expiry && <> · <span style={{ color: expiry.color, fontWeight: expiry.color === COLORS.muted ? 400 : 600 }}>{expiry.text}</span></>}
                               </div>
                             </div>
-                            <div style={{ fontSize: 22, fontWeight: 700 }}>{it.qty}<span style={{ fontSize: 12, fontWeight: 400, color: COLORS.muted }}> {cat.unit}</span></div>
+                            <div data-guide="item-qty" style={{ fontSize: 22, fontWeight: 700 }}>{it.qty}<span style={{ fontSize: 12, fontWeight: 400, color: COLORS.muted }}> {cat.unit}</span></div>
                             {groupCanModify && (
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                <button onClick={() => adjustItem(it, -1)} disabled={it.qty === 0} style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${it.qty === 0 ? COLORS.border : COLORS.muted}`, background: '#fff', color: it.qty === 0 ? '#C7C5C7' : COLORS.text, cursor: it.qty === 0 ? 'default' : 'pointer' }}>−</button>
-                                <button onClick={() => adjustItem(it, 1)} style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${COLORS.muted}`, background: '#fff', cursor: 'pointer' }}>+</button>
-                                <button onClick={() => { setEditingItem(isEditing ? null : it.id); setEditItemForm(itemToForm(it)); }} style={{ ...linkBtn(), fontSize: 12 }}>Editar</button>
-                                <button onClick={() => deleteItemRow(it)} style={{ ...linkBtn(COLORS.danger), fontSize: 12 }}>Eliminar</button>
+                                <button data-guide="item-minus" onClick={() => adjustItem(it, -1)} disabled={it.qty === 0} style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${it.qty === 0 ? COLORS.border : COLORS.muted}`, background: '#fff', color: it.qty === 0 ? '#C7C5C7' : COLORS.text, cursor: it.qty === 0 ? 'default' : 'pointer' }}>−</button>
+                                <button data-guide="item-plus" onClick={() => adjustItem(it, 1)} style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${COLORS.muted}`, background: '#fff', cursor: 'pointer' }}>+</button>
+                                <button data-guide="item-edit" onClick={() => { setEditingItem(isEditing ? null : it.id); setEditItemForm(itemToForm(it)); }} style={{ ...linkBtn(), fontSize: 12 }}>Editar</button>
+                                <button data-guide="item-delete" onClick={() => deleteItemRow(it)} style={{ ...linkBtn(COLORS.danger), fontSize: 12 }}>Eliminar</button>
                               </div>
                             )}
                           </div>
@@ -420,7 +490,7 @@ export default function Home() {
                     })}
                   </div>
                   {groupCanModify && (openNewItem === cat.id ? (
-                    <div style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', marginTop: 8, border: `1px dashed ${COLORS.border}` }}>
+                    <div data-guide="add-item" style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', marginTop: 8, border: `1px dashed ${COLORS.border}` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Nuevo artículo en {cat.name}</div>
                       {itemForm(form, setForm, schema, true)}
                       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -429,7 +499,7 @@ export default function Home() {
                       </div>
                     </div>
                   ) : (
-                    <button onClick={() => setOpenNewItem(cat.id)} style={{ ...linkBtn(COLORS.primary), fontWeight: 600, marginTop: 8, padding: '6px 4px' }}>+ Agregar artículo</button>
+                    <button data-guide="add-item" onClick={() => setOpenNewItem(cat.id)} style={{ ...linkBtn(COLORS.primary), fontWeight: 600, marginTop: 8, padding: '6px 4px' }}>+ Agregar artículo</button>
                   ))}
                 </div>
               );
@@ -441,12 +511,12 @@ export default function Home() {
         {section === 'movimientos' && canSeeMovements && currentGroup && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-              <button onClick={clearMovements} disabled={groupMovements.length === 0} style={{ border: 'none', background: 'none', color: groupMovements.length === 0 ? '#C7C5C7' : COLORS.danger, fontSize: 13, fontWeight: 600, cursor: groupMovements.length === 0 ? 'default' : 'pointer' }}>Vaciar movimientos de este inventario</button>
+              <button data-guide="mov-clear" onClick={clearMovements} disabled={groupMovements.length === 0} style={{ border: 'none', background: 'none', color: groupMovements.length === 0 ? '#C7C5C7' : COLORS.danger, fontSize: 13, fontWeight: 600, cursor: groupMovements.length === 0 ? 'default' : 'pointer' }}>Vaciar movimientos de este inventario</button>
             </div>
             <div style={{ background: '#fff', borderRadius: 16, padding: '4px 20px' }}>
               {groupMovements.length === 0 && <div style={{ textAlign: 'center', padding: '60px 20px', color: COLORS.muted }}>Aún no hay movimientos.</div>}
               {groupMovements.map((mv) => (
-                <div key={mv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${COLORS.border}` }}>
+                <div key={mv.id} data-guide="mov-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${COLORS.border}` }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{mv.item.name}</div>
                     <div style={{ fontSize: 12, color: COLORS.muted }}>{mv.item.category.name} · {new Date(mv.fecha).toLocaleString('es-MX')} · {mv.usuario}</div>
@@ -456,7 +526,7 @@ export default function Home() {
                       <div style={{ fontSize: 14, fontWeight: 700, color: mv.delta > 0 ? COLORS.teal : COLORS.primary }}>{mv.delta > 0 ? `+${mv.delta}` : mv.delta}</div>
                       <div style={{ fontSize: 11, color: COLORS.muted }}>{mv.antes} → {mv.despues}</div>
                     </div>
-                    <button onClick={() => deleteMovementRow(mv)} style={{ ...linkBtn(COLORS.danger), fontSize: 12 }}>Eliminar</button>
+                    <button data-guide="mov-delete" onClick={() => deleteMovementRow(mv)} style={{ ...linkBtn(COLORS.danger), fontSize: 12 }}>Eliminar</button>
                   </div>
                 </div>
               ))}
@@ -471,7 +541,7 @@ export default function Home() {
               const isEditing = editingCat === cat.id;
               const schema = cat.schema || [];
               return (
-                <div key={cat.id} style={{ background: '#fff', borderRadius: 16, padding: '14px 18px' }}>
+                <div key={cat.id} data-guide="cat-card" style={{ background: '#fff', borderRadius: 16, padding: '14px 18px' }}>
                   {isEditing ? (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <input placeholder="Nombre" value={editCatForm.name} onChange={(e) => setEditCatForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle({ flex: 2, minWidth: 120, fontSize: 14 })} />
@@ -488,8 +558,8 @@ export default function Home() {
                       </div>
                       {groupCanModify && (
                         <div style={{ display: 'flex', gap: 12 }}>
-                          <button onClick={() => { setEditingCat(cat.id); setEditCatForm({ name: cat.name, unit: cat.unit, schema: schema.join(', ') }); }} style={linkBtn()}>Editar</button>
-                          <button onClick={() => deleteCategoryRow(cat)} style={linkBtn(COLORS.danger)}>Eliminar</button>
+                          <button data-guide="cat-edit" onClick={() => { setEditingCat(cat.id); setEditCatForm({ name: cat.name, unit: cat.unit, schema: schema.join(', ') }); }} style={linkBtn()}>Editar</button>
+                          <button data-guide="cat-delete" onClick={() => deleteCategoryRow(cat)} style={linkBtn(COLORS.danger)}>Eliminar</button>
                         </div>
                       )}
                     </div>
@@ -498,7 +568,7 @@ export default function Home() {
               );
             })}
             {groupCanModify && (
-              <div style={{ background: '#fff', borderRadius: 16, padding: '16px 18px' }}>
+              <div data-guide="cat-new" style={{ background: '#fff', borderRadius: 16, padding: '16px 18px' }}>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Nueva categoría</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <input placeholder="Nombre" value={newCat.name} onChange={(e) => setNewCat((c) => ({ ...c, name: e.target.value }))} style={inputStyle({ flex: 2, minWidth: 140, fontSize: 14, padding: '9px 12px' })} />
@@ -516,7 +586,7 @@ export default function Home() {
             {groups.map((g) => {
               const isEditing = editingGroup === g.id;
               return (
-                <div key={g.id} style={{ background: '#fff', borderRadius: 16, padding: '14px 18px' }}>
+                <div key={g.id} data-guide="group-card" style={{ background: '#fff', borderRadius: 16, padding: '14px 18px' }}>
                   {isEditing ? (
                     <div>
                       {groupForm(editGroupForm, setEditGroupForm)}
@@ -535,15 +605,15 @@ export default function Home() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 12 }}>
-                        <button onClick={() => { setEditingGroup(g.id); setEditGroupForm({ label: g.label, area: g.area, color: g.color }); }} style={linkBtn()}>Editar</button>
-                        <button onClick={() => deleteGroupRow(g)} style={linkBtn(COLORS.danger)}>Eliminar</button>
+                        <button data-guide="group-edit" onClick={() => { setEditingGroup(g.id); setEditGroupForm({ label: g.label, area: g.area, color: g.color }); }} style={linkBtn()}>Editar</button>
+                        <button data-guide="group-delete" onClick={() => deleteGroupRow(g)} style={linkBtn(COLORS.danger)}>Eliminar</button>
                       </div>
                     </div>
                   )}
                 </div>
               );
             })}
-            <div style={{ background: '#fff', borderRadius: 16, padding: '16px 18px' }}>
+            <div data-guide="group-new" style={{ background: '#fff', borderRadius: 16, padding: '16px 18px' }}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Nuevo grupo de inventario</div>
               {groupForm(newGroup, setNewGroup)}
               <button onClick={addGroup} style={{ ...primaryBtn, marginTop: 12, fontSize: 14, padding: '9px 16px' }}>Agregar grupo</button>
@@ -556,23 +626,23 @@ export default function Home() {
             {users.map((u) => {
               const isMe = u.id === user.id;
               return (
-                <div key={u.id} style={{ background: '#fff', borderRadius: 16, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div key={u.id} data-guide="user-card" style={{ background: '#fff', borderRadius: 16, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{u.name}{isMe && <span style={{ fontWeight: 400, color: COLORS.muted }}> (tú)</span>}</div>
                     <div style={{ fontSize: 12, color: COLORS.muted }}>{u.email}</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <div data-guide="user-roles" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {ROLE_KEYS.map((r) => (
                       <button key={r} onClick={() => setRole(u, r)} disabled={isMe && r !== 'admin'} style={{ ...chipBtn(u.role === r), opacity: isMe && r !== 'admin' ? 0.4 : 1, cursor: isMe && r !== 'admin' ? 'default' : 'pointer' }}>
                         {ROLE_LABEL[r]}
                       </button>
                     ))}
                   </div>
-                  <button onClick={() => deleteUserRow(u)} disabled={isMe} style={{ border: 'none', background: 'none', color: isMe ? '#C7C5C7' : COLORS.danger, fontSize: 12, cursor: isMe ? 'default' : 'pointer' }}>Eliminar</button>
+                  <button data-guide="user-delete" onClick={() => deleteUserRow(u)} disabled={isMe} style={{ border: 'none', background: 'none', color: isMe ? '#C7C5C7' : COLORS.danger, fontSize: 12, cursor: isMe ? 'default' : 'pointer' }}>Eliminar</button>
                 </div>
               );
             })}
-            <div style={{ background: '#fff', borderRadius: 16, padding: '16px 18px' }}>
+            <div data-guide="user-new" style={{ background: '#fff', borderRadius: 16, padding: '16px 18px' }}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Nuevo usuario</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input placeholder="Nombre" value={newUser.name} onChange={(e) => setNewUser((u) => ({ ...u, name: e.target.value }))} style={inputStyle({ flex: 1.5, minWidth: 140, fontSize: 14, padding: '9px 12px' })} />
@@ -591,6 +661,34 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {section === 'perfil' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div data-guide="profile-data" style={{ background: '#fff', borderRadius: 16, padding: '18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+              <span style={{ width: 48, height: 48, borderRadius: 24, background: COLORS.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 600, flexShrink: 0 }}>{(user.name || '?').trim().charAt(0).toUpperCase()}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>{user.name}</div>
+                <div style={{ fontSize: 13, color: COLORS.muted, overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
+                <div style={{ display: 'inline-block', marginTop: 6, fontSize: 12, fontWeight: 600, color: COLORS.primary, background: COLORS.light, borderRadius: 6, padding: '2px 8px' }}>{ROLE_LABEL[user.role]}</div>
+              </div>
+            </div>
+            <div data-guide="profile-guide" style={{ background: '#fff', borderRadius: 16, padding: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>Asistente de uso</div>
+                  <div style={{ fontSize: 13, color: COLORS.muted, marginTop: 2 }}>
+                    {user.showGuide ? 'Activado: la guía de cada pantalla aparece cada vez que abres la app.' : 'Desactivado: la guía no aparece al abrir la app.'}
+                  </div>
+                </div>
+                <button role="switch" aria-checked={!!user.showGuide} aria-label="Asistente de uso" onClick={() => setGuidePreference(!user.showGuide)} style={{ width: 48, height: 28, borderRadius: 14, border: 'none', background: user.showGuide ? COLORS.primary : '#D5D3D6', position: 'relative', cursor: 'pointer', flexShrink: 0, transition: 'background .2s' }}>
+                  <span style={{ position: 'absolute', top: 3, left: user.showGuide ? 23 : 3, width: 22, height: 22, borderRadius: 11, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left .2s' }} />
+                </button>
+              </div>
+              <button onClick={replayGuideEverywhere} style={{ ...linkBtn(COLORS.primary), fontWeight: 600, marginTop: 12, padding: 0 }}>Ver guía ahora</button>
+            </div>
+          </div>
+        )}
+      </div>
       </div>
     </div>
   );
