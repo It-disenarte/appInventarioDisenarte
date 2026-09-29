@@ -1,9 +1,10 @@
 import { prisma } from '../../../lib/prisma';
 import { getSessionFromReq } from '../../../lib/auth';
 import { canModify } from '../../../lib/permissions';
+import { cleanSchema } from '../../../lib/characteristics';
 
 export default async function handler(req, res) {
-  const session = getSessionFromReq(req);
+  const session = await getSessionFromReq(req);
   if (!session) return res.status(401).json({ error: 'No autenticado.' });
 
   const id = Number(req.query.id);
@@ -14,9 +15,9 @@ export default async function handler(req, res) {
   if (req.method === 'PATCH') {
     const { name, unit, schema } = req.body || {};
     const data = {};
-    if (name !== undefined) data.name = name;
-    if (unit !== undefined) data.unit = unit;
-    if (schema !== undefined) data.schema = schema;
+    if (name !== undefined) { if (!String(name).trim()) return res.status(400).json({ error: 'El nombre es obligatorio.' }); data.name = String(name).trim(); }
+    if (unit !== undefined) data.unit = String(unit).trim() || 'piezas';
+    if (schema !== undefined) data.schema = cleanSchema(schema);
     const updated = await prisma.category.update({ where: { id }, data });
     return res.status(200).json({ category: updated });
   }

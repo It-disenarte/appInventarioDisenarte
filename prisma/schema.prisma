@@ -41,6 +41,11 @@ model Item {
   qty             Int
   reorder         Int
   characteristics Json       @default("{}")
+  codigo          String?
+  metraje         String?
+  proveedor       String?
+  descripcion     String?
+  caducidad       DateTime?  @db.Date
   categoryId      Int
   category        Category   @relation(fields: [categoryId], references: [id])
   movements       Movement[]

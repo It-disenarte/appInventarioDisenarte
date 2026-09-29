@@ -1,9 +1,11 @@
 import { prisma } from '../../../lib/prisma';
 import { getSessionFromReq } from '../../../lib/auth';
 import { canModify } from '../../../lib/permissions';
+import { cleanCharacteristics } from '../../../lib/characteristics';
+import { cleanItemFields } from '../../../lib/itemFields';
 
 export default async function handler(req, res) {
-  const session = getSessionFromReq(req);
+  const session = await getSessionFromReq(req);
   if (!session) return res.status(401).json({ error: 'No autenticado.' });
 
   const id = Number(req.query.id);
@@ -12,12 +14,38 @@ export default async function handler(req, res) {
   if (!canModify(session.role, item.category.group.area)) return res.status(403).json({ error: 'No tienes permiso sobre esta área.' });
 
   if (req.method === 'PATCH') {
-    const d = Number((req.body || {}).delta) || 0;
-    const antes = item.qty;
-    const despues = Math.max(0, antes + d);
-    const updated = await prisma.item.update({ where: { id }, data: { qty: despues } });
-    await prisma.movement.create({ data: { itemId: id, tipo: d > 0 ? 'Entrada' : 'Consumo', delta: d, antes, despues, usuario: session.name } });
-    return res.status(200).json({ item: updated });
+    const body = req.body || {};
+
+    // Sin delta: edición de datos del artículo (no toca la cantidad).
+    if (body.delta === undefined) {
+      let data;
+      try { data = cleanItemFields(body); } catch (e) { return res.status(400).json({ error: e.message }); }
+      if (body.name !== undefined) {
+        if (!String(body.name).trim()) return res.status(400).json({ error: 'El nombre es obligatorio.' });
+        data.name = String(body.name).trim();
+      }
+      if (body.reorder !== undefined) data.reorder = Math.max(0, Math.trunc(Number(body.reorder) || 0));
+      if (body.characteristics !== undefined) data.characteristics = cleanCharacteristics(item.category.schema, body.characteristics);
+      const updated = await prisma.item.update({ where: { id }, data });
+      return res.status(200).json({ item: updated });
+    }
+
+    const d = Math.trunc(Number(body.delta) || 0);
+    if (d === 0) return res.status(400).json({ error: 'Cantidad inválida.' });
+
+    // El increment es atómico y bloquea la fila hasta el fin de la transacción,
+    // así dos ajustes simultáneos no se pisan.
+    const result = await prisma.$transaction(async (tx) => {
+      let updated = await tx.item.update({ where: { id }, data: { qty: { increment: d } } });
+      const antes = updated.qty - d;
+      if (updated.qty < 0) updated = await tx.item.update({ where: { id }, data: { qty: 0 } });
+      const despues = updated.qty;
+      const real = despues - antes;
+      if (real === 0) return { item: updated, movement: null };
+      const movement = await tx.movement.create({ data: { itemId: id, tipo: real > 0 ? 'Entrada' : 'Consumo', delta: real, antes, despues, usuario: session.name }, include: { item: { include: { category: { include: { group: true } } } } } });
+      return { item: updated, movement };
+    });
+    return res.status(200).json(result);
   }
 
   if (req.method === 'DELETE') {
