@@ -39,6 +39,10 @@ export default async function handler(req, res) {
       let updated = await tx.item.update({ where: { id }, data: { qty: { increment: d } } });
       const antes = updated.qty - d;
       if (updated.qty < 0) updated = await tx.item.update({ where: { id }, data: { qty: 0 } });
+      // Repuesto por encima del mínimo: la solicitud de Zoho ya cumplió, se libera el botón.
+      if (updated.qty > updated.reorder && (updated.zohoTaskId || updated.zohoRequestedAt)) {
+        updated = await tx.item.update({ where: { id }, data: { zohoTaskId: null, zohoRequestedAt: null } });
+      }
       const despues = updated.qty;
       const real = despues - antes;
       if (real === 0) return { item: updated, movement: null };

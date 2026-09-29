@@ -6,6 +6,7 @@ import SideMenu, { SIDE_MENU_WIDTH } from '../components/SideMenu';
 import GuideTour from '../components/GuideTour';
 import { generalSteps, sectionSteps } from '../lib/guideSteps';
 import { canModify, canManageGroups, ROLE_KEYS, AREA_KEYS } from '../lib/permissions';
+import { taskWebUrl } from '../lib/zoho';
 
 const COLORS = { primary: '#A53692', secondary: '#7C07A6', teal: '#5CC6D0', bg: '#F7F7F8', border: '#E4E4E5', muted: '#96989A', text: '#1D1B1E', danger: '#B3261E', light: '#F6E4F2' };
 const ROLE_LABEL = { produccion: 'Producción', diseno: 'Diseño', super: 'Súper', admin: 'Admin' };
@@ -164,7 +165,15 @@ export default function Home() {
       const role = me.user.role;
       await Promise.all([
         api('/api/groups').then((d) => applyGroups(d.groups)),
-        api('/api/items').then((d) => setItems(d.items)),
+        api('/api/items').then((d) => {
+          setItems(d.items);
+          // Libera en segundo plano las solicitudes que ya se cerraron en Zoho.
+          if (d.items.some((it) => it.zohoTaskId)) {
+            api('/api/zoho/sync', { method: 'POST' })
+              .then((r) => { if (r.cleared.length) setItems((s) => s.map((it) => (r.cleared.includes(it.id) ? { ...it, zohoTaskId: null, zohoRequestedAt: null } : it))); })
+              .catch(() => {});
+          }
+        }),
         seesMovements(role) ? api('/api/movements').then((d) => setMovements(d.movements)) : setMovements([]),
         role === 'admin' ? api('/api/users').then((d) => setUsers(d.users)) : setUsers([]),
       ]);
@@ -204,8 +213,25 @@ export default function Home() {
   async function adjustItem(item, delta) {
     await withBusy(async () => {
       const r = await api(`/api/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ delta }) });
-      setItems((s) => s.map((i) => (i.id === item.id ? { ...i, qty: r.item.qty } : i)));
+      setItems((s) => s.map((i) => (i.id === item.id ? { ...i, qty: r.item.qty, zohoTaskId: r.item.zohoTaskId, zohoRequestedAt: r.item.zohoRequestedAt } : i)));
       if (r.movement && seesMovements(user.role)) setMovements((s) => [r.movement, ...s]);
+    });
+  }
+  async function requestRestock(item) {
+    const unit = item.category.unit;
+    if (!(await ask({ title: 'Solicitar reabastecimiento', message: `Se creará una solicitud en Zoho Projects (DI-5 · Gestión de Compras y Materiales, columna Solicitud) para "${item.name}".\nExistencia: ${item.qty} ${unit} · reorden: ${item.reorder} ${unit}.`, confirmLabel: 'Solicitar' }))) return;
+    // La pestaña se abre aquí, todavía dentro del clic, para que el navegador no la bloquee.
+    const win = window.open('about:blank', '_blank');
+    await withBusy(async () => {
+      try {
+        const r = await api('/api/zoho/restock', { method: 'POST', body: JSON.stringify({ itemId: item.id }) });
+        setItems((s) => s.map((i) => (i.id === item.id ? { ...i, zohoTaskId: r.item.zohoTaskId, zohoRequestedAt: r.item.zohoRequestedAt } : i)));
+        if (win) win.location.href = r.task.url;
+      } catch (e) {
+        if (win) win.close();
+        if (e.status === 409) await reload('items');
+        throw e;
+      }
     });
   }
   async function deleteItemRow(item) {
@@ -462,9 +488,18 @@ export default function Home() {
                               {details && <div style={{ fontSize: 12, color: COLORS.text, opacity: 0.75 }}>{details}</div>}
                               {it.descripcion && <div style={{ fontSize: 12, color: COLORS.muted, whiteSpace: 'pre-wrap' }}>{it.descripcion}</div>}
                               <div style={{ fontSize: 12, color: COLORS.muted }}>
-                                <span style={{ color: low ? '#E8A33D' : COLORS.muted }}>{low ? 'Bajo mínimo' : 'Stock ok'}</span> · reorden {it.reorder}
+                                <span style={{ color: low ? '#E8A33D' : COLORS.muted }}>{it.qty === 0 ? 'Agotado' : low ? 'Bajo mínimo' : 'Stock ok'}</span> · reorden {it.reorder}
                                 {expiry && <> · <span style={{ color: expiry.color, fontWeight: expiry.color === COLORS.muted ? 400 : 600 }}>{expiry.text}</span></>}
                               </div>
+                              {low && (it.zohoTaskId ? (
+                                <div data-guide="item-restock-status" style={{ fontSize: 12, color: COLORS.muted, marginTop: 6 }}>
+                                  Solicitado{it.zohoRequestedAt && ` el ${new Date(it.zohoRequestedAt).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit' })}`} · <a href={taskWebUrl(it.zohoTaskId)} target="_blank" rel="noopener noreferrer" style={{ color: COLORS.primary, fontWeight: 600, textDecoration: 'none' }}>Ver en Zoho</a>
+                                </div>
+                              ) : (
+                                <button data-guide="item-restock" onClick={() => requestRestock(it)} style={{ marginTop: 8, border: `1px solid ${COLORS.primary}`, background: COLORS.light, color: COLORS.primary, borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}>
+                                  Solicitar reabastecimiento
+                                </button>
+                              ))}
                             </div>
                             <div data-guide="item-qty" style={{ fontSize: 22, fontWeight: 700 }}>{it.qty}<span style={{ fontSize: 12, fontWeight: 400, color: COLORS.muted }}> {cat.unit}</span></div>
                             {groupCanModify && (

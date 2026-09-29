@@ -47,6 +47,8 @@ model Item {
   proveedor       String?
   descripcion     String?
   caducidad       DateTime?  @db.Date
+  zohoTaskId      String?
+  zohoRequestedAt DateTime?
   categoryId      Int
   category        Category   @relation(fields: [categoryId], references: [id])
   movements       Movement[]
