@@ -333,7 +333,7 @@ export default function Home() {
   if (loadError) {
     return (
       <div style={{ fontFamily: "'Outfit', system-ui, sans-serif", minHeight: '100vh', background: COLORS.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 16, textAlign: 'center' }}>
-        <img src="/isotipo.png" alt="Diseñarte México" style={{ width: 56, height: 56 }} />
+        <img src="/icon.svg" alt="Inventario" style={{ width: 56, height: 56 }} />
         <div style={{ fontSize: 14, color: COLORS.muted }}>{loadError}</div>
         <button onClick={loadAll} style={primaryBtn}>Reintentar</button>
       </div>
@@ -452,7 +452,7 @@ export default function Home() {
           </div>
         </div>
         <button data-guide="help-button" onClick={() => openGuide(section, false)} aria-label="Ver guía de esta pantalla" title="Ver guía de esta pantalla" style={{ width: 32, height: 32, borderRadius: 16, border: `1px solid ${COLORS.border}`, background: '#fff', color: COLORS.primary, fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0 }}>?</button>
-        {!isWide && <img src="/isotipo.png" alt="Diseñarte México" style={{ width: 28, height: 28, flexShrink: 0 }} />}
+        {!isWide && <img src="/icon.svg" alt="Inventario" style={{ width: 28, height: 28, flexShrink: 0 }} />}
       </div>
 
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 16 }}>

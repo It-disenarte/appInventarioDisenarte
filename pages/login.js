@@ -32,7 +32,7 @@ export default function Login() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <form onSubmit={submit} style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 20, padding: '40px 32px 32px', boxShadow: '0 12px 40px rgba(165,54,146,0.10)' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
-            <img src="/logo.png" alt="Diseñarte México" style={{ width: 140, height: 'auto' }} />
+            <img src="/icon.svg" alt="Inventario" style={{ width: 72, height: 72 }} />
           </div>
           <div style={{ fontSize: 22, fontWeight: 600, color: '#1D1B1E', textAlign: 'center', marginBottom: 4 }}>Inventario</div>
           <div style={{ fontSize: 14, color: '#96989A', textAlign: 'center', marginBottom: 28 }}>Inicia sesión con tu cuenta</div>

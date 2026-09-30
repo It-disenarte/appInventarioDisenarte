@@ -37,7 +37,7 @@ export default function SideMenu({ open, persistent, onClose, groups, groupId, o
       )}
       <nav aria-label="Menú principal" style={{ position: 'fixed', top: 0, bottom: 0, left: 0, width: SIDE_MENU_WIDTH, maxWidth: '85vw', background: '#fff', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', transform: visible ? 'none' : 'translateX(-100%)', transition: 'transform .22s ease-out', boxShadow: !persistent && open ? '4px 0 24px rgba(0,0,0,0.12)' : 'none', zIndex: 45 }}>
         <div style={{ height: 64, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <img src="/isotipo.png" alt="Diseñarte México" style={{ width: 30, height: 30 }} />
+          <img src="/icon.svg" alt="Inventario" style={{ width: 30, height: 30 }} />
           <div style={{ fontSize: 19, fontWeight: 600, color: C.text, flex: 1 }}>Inventario</div>
           {!persistent && (
             <button onClick={onClose} aria-label="Cerrar menú" style={{ border: 'none', background: 'none', padding: 6, cursor: 'pointer', color: C.muted, display: 'flex' }}>

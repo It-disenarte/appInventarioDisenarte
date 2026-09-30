@@ -1,8 +1,8 @@
 // Network-first: la app siempre intenta datos frescos. Se guarda en caché solo la
 // "cáscara" (páginas y estáticos) para que abra sin conexión; /api nunca se cachea,
 // así los datos del inventario no quedan guardados en el dispositivo.
-const CACHE = 'inventario-v2';
-const SHELL = ['/', '/login', '/manifest.json', '/isotipo.png', '/logo.png', '/icon-192.png', '/icon-512.png'];
+const CACHE = 'inventario-v4';
+const SHELL = ['/', '/login', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));

@@ -45,7 +45,7 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - Primario magenta `#A53692`, secundario morado `#7C07A6`, acento turquesa `#5CC6D0`, gris `#96989A`.
 - Fondo de la app `#F7F7F8`, bordes `#E4E4E5`, estado activo `#F6E4F2`.
 - Degradado de marca turquesa → magenta (como la palabra "Diseñarte"). Se usa como franja en el login.
-- `public/logo.png`: imagotipo completo (login). `public/isotipo.png`: símbolo "D" (header, pantalla de carga). `icon-192/512.png`: íconos de la PWA.
+- `public/icon.svg`: ícono de la app (hoja turquesa con caja), unificado con las demás apps del HUB. Se usa en login, header, menú lateral, pantalla de carga y favicon. `icon-192/512.png` y `apple-touch-icon.png` (fondo blanco para iOS) se generan desde el SVG.
 - No distorsionar, recolorear ni poner el logo sobre fondos sin contraste. Respetar el área de protección.
 - Tipografía: se usa Outfit de forma provisional. La tipografía oficial del manual está pendiente de confirmar.
 - Estilos inline en los componentes React.
