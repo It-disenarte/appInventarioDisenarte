@@ -13,10 +13,10 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - PWA instalable (manifest + service worker network-first que cachea solo páginas/estáticos, nunca `/api`).
 
 ## Estructura
-- `pages/index.js`: toda la app autenticada en una sola página. Navegación con menú lateral (`components/SideMenu.js`): fijo en pantallas de 1024px o más, desplegable con ☰ en celular. Lista los grupos (Inventarios), las vistas del grupo (Artículos, Movimientos, Categorías) y Administración (Grupos para admin/super, Usuarios para admin). Sin barras de pestañas con scroll horizontal. Tras cada acción solo se recarga lo que cambió (`reload(...)`) o se actualiza el estado local.
-- `pages/login.js`: login con toggle "Ver/Ocultar" contraseña. No mostrar credenciales en pantalla.
-- `pages/_document.js`: fuente Outfit (Google Fonts), manifest, íconos, meta tags de Apple.
-- `pages/_app.js`: registra `/sw.js`.
+- `pages/index.js`: toda la app autenticada en una sola página. Navegación con menú lateral morado de 256 px (`components/SideMenu.js`): fijo desde 768 px; en celular hay barra superior morada (☰, ícono, botón ?) y el menú sale como cajón. Lista los grupos (Inventarios), las vistas del grupo (Artículos, Movimientos, Categorías), Administración (Grupos para admin/super, Usuarios para admin) y Cuenta (Mi perfil, interruptor del asistente, Ver guía de esta pantalla, Instalar como app si el navegador lo ofrece); al pie, usuario, rol y Salir. Sin barras de pestañas con scroll horizontal. Tras cada acción solo se recarga lo que cambió (`reload(...)`) o se actualiza el estado local.
+- `pages/login.js`: login de dos columnas (panel morado + tarjeta sobre textura; en celular, marca arriba), con toggle "Ver/Ocultar" contraseña. No mostrar credenciales en pantalla.
+- `pages/_document.js`: manifest, favicons, meta tags de Apple.
+- `pages/_app.js`: registra `/sw.js`, carga Poppins con `next/font/google` (se sirve desde la app, no desde Google) e importa `styles/globals.css`.
 - `pages/api/auth/{login,logout,me}.js`
 - `pages/api/groups/index.js` (GET; POST solo admin/super) y `[id].js` (PATCH label/area/color; DELETE en cascada; solo admin/super).
 - `pages/api/items/index.js` (GET, POST con campos fijos y `characteristics`) y `[id].js` (PATCH con `delta`: increment atómico en transacción, no baja de 0 y no registra movimientos sin cambio real; PATCH sin `delta`: edita nombre, reorden, campos fijos y `characteristics`; DELETE). Los campos fijos se limpian en `lib/itemFields.js`.
@@ -28,7 +28,8 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - Zoho Projects: `lib/zoho.js` + `pages/api/zoho/restock.js` (POST `{ itemId }`, cualquier usuario, solo si qty ≤ reorden) y `pages/api/zoho/sync.js` (libera solicitudes cuya tarea se cerró). Crea la tarea en DI-5 "Gestión de Compras y Materiales" → lista General → estado Solicitud, etiqueta "stock". La app actúa como `it@disenartemx.com` vía refresh token (Self Client en api-console.zoho.com, scopes `ZohoProjects.tasks.CREATE,ZohoProjects.tasks.READ`). Env: `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`; sin ellas el botón responde 503. `Item.zohoTaskId`/`zohoRequestedAt` evitan duplicados; se limpian cuando la existencia vuelve a superar el reorden o la tarea se cierra.
 - `pages/api/profile.js`: PATCH `{ showGuide }` del propio usuario (cualquier rol).
 - `components/ConfirmDialog.js`: diálogo de confirmación con la marca. No usar `window.confirm`/`alert`; en `index.js` se usa `if (!(await ask({ title, message, confirmLabel, danger }))) return;`.
-- `components/LoadingScreen.js`: carga inicial. `index.js` además muestra un overlay `busy` en cada acción.
+- `components/LoadingScreen.js`: pantalla de arranque y `LoadingOverlay` (tarjeta con spinner y mensaje en gerundio, entra con 180 ms de retraso). En `index.js`, `withBusy(fn, 'Eliminando…')` la muestra en cada operación con servidor (por defecto "Guardando…").
+- `components/Brand.js` (ícono + "Inventario" + "DISEÑARTE MÉXICO") e `components/Icon.js` (íconos de línea con paths de lucide).
 - `prisma/schema.prisma`: User, Group(area), Category(unit, schema Json), Item(qty, reorder, characteristics Json, codigo, metraje, proveedor, descripcion: texto opcional; caducidad: fecha opcional, la UI avisa desde 30 días antes), Movement(tipo, delta, antes, despues, usuario, fecha).
 - `prisma/seed.js`: crea solo el admin `it@disenartemx.com` y grupos/categorías de ejemplo, solo si no hay grupos. El usuario borra los datos de ejemplo desde la app.
 
@@ -42,13 +43,15 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - Sesiones: se permiten sesiones múltiples simultáneas. Está pendiente decidir si se limita a una por usuario.
 
 ## Identidad de marca (Manual de marca Diseñarte)
-- Primario magenta `#A53692`, secundario morado `#7C07A6`, acento turquesa `#5CC6D0`, gris `#96989A`.
-- Fondo de la app `#F7F7F8`, bordes `#E4E4E5`, estado activo `#F6E4F2`.
-- Degradado de marca turquesa → magenta (como la palabra "Diseñarte"). Se usa como franja en el login.
-- `public/icon.svg`: ícono de la app (hoja turquesa con caja), unificado con las demás apps del HUB. Se usa en login, header, menú lateral, pantalla de carga y favicon. `icon-192/512.png` y `apple-touch-icon.png` (fondo blanco para iOS) se generan desde el SVG.
+- Sigue la guía unificada de las apps Diseñarte (estándar: Cotizador). Primario morado `#7C07A6` (hover `#6A0590`); magenta `#A53692` solo en el filete y detalles; turquesa `#5CC6D0` en detalles, aro del asistente e interruptores (nunca texto pequeño); gris `#96989A`.
+- Fondo `#FAFAFB` con `public/textura.jpg` al 7 %; texto `#1D1B22`; bordes `#E4E1E8`; borde de campo `#D6D2DC`; error `#B3261E` sobre `#FCEEEE`. Sin fondos rosas ni lilas.
+- Filete de marca turquesa → magenta: bajo la marca del menú, en la barra móvil, en el login y en diálogos/asistente.
+- `styles/globals.css`: tokens y clases `.campo`, `.btn` (`-primario`, `-contorno`, `-fantasma`, `-peligro`), `.tarjeta`, `.menu-item`. Campos con etiqueta arriba, radio 8 y anillo morado; botones radio 8 (sin píldoras); tarjetas blancas radio 14; títulos de pantalla (h1) en morado.
+- Ícono: hoja turquesa (esquinas 40 %/11 %) con caja blanca, en `public/favicon.svg`. Derivados: `favicon.ico`, `icono-192/512.png`, `icono-512-maskable.png` y `apple-touch-icon.png` (opaco, se referencia con `?v=2`). Si cambia, usar nombres o versiones nuevos (caché del favicon) y subir `CACHE` en `public/sw.js`.
+- No usar los "tres puntos" decorativos del Cotizador.
 - No distorsionar, recolorear ni poner el logo sobre fondos sin contraste. Respetar el área de protección.
-- Tipografía: se usa Outfit de forma provisional. La tipografía oficial del manual está pendiente de confirmar.
-- Estilos inline en los componentes React.
+- Tipografía: Poppins 300–700 (latin y latin-ext).
+- Estilos inline en los componentes React; `globals.css` solo para tokens, hover, foco, media queries y animaciones.
 
 ## Comandos
 - `npm install`
@@ -62,7 +65,6 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - Error 500 en login: revisar Vercel → Logs. Casi siempre es la conexión a la BD o una env var faltante.
 
 ## Pendientes / ideas
-- Confirmar la tipografía oficial del manual.
 - Decidir si se limita a una sesión por usuario.
 - Posible dominio propio.
 - Esta app es la primera del "HUB Diseñarte". Las siguientes apps reutilizan esta arquitectura (ver `SKILL_APPS_WEB_CON_BD.md`).

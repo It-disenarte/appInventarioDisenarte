@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import Brand from '../components/Brand';
+import { LoadingOverlay } from '../components/LoadingScreen';
 
+const label = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 14, fontWeight: 500, color: 'var(--texto)' };
+
+// Escritorio: panel morado con la marca a la izquierda y el formulario sobre la textura.
+// Celular: sin panel; la marca va centrada arriba de la tarjeta.
 export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -24,41 +30,49 @@ export default function Login() {
     }
   }
 
-  const input = { border: '1px solid #E4E4E5', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: 'inherit', outline: 'none', color: '#1D1B1E', background: '#fff' };
-
   return (
-    <div style={{ fontFamily: "'Outfit', system-ui, sans-serif", minHeight: '100vh', background: '#F7F7F8', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ height: 6, background: 'linear-gradient(90deg, #5CC6D0 0%, #A53692 100%)' }} />
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <form onSubmit={submit} style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 20, padding: '40px 32px 32px', boxShadow: '0 12px 40px rgba(165,54,146,0.10)' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
-            <img src="/icon.svg" alt="Inventario" style={{ width: 72, height: 72 }} />
+    <main className="acceso">
+      {loading && <LoadingOverlay message="Entrando…" />}
+      <section className="acceso-panel" style={{ flexDirection: 'column', background: 'var(--morado)', color: '#fff', padding: 40 }}>
+        <div style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', gap: 32 }}>
+          <Brand size={76} onDark />
+          <div style={{ width: 96, height: 4, borderRadius: 2, background: 'var(--filete)' }} />
+          <p style={{ margin: 0, maxWidth: 320, fontSize: 18, fontWeight: 300, lineHeight: 1.4, color: 'rgba(255,255,255,.9)' }}>
+            Control de materiales, insumos y herramientas de cada área.
+          </p>
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,.6)' }}>www.disenartemx.com</p>
+      </section>
+
+      <section style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 16px' }}>
+        <div style={{ width: '100%', maxWidth: 384, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div className="acceso-marca-movil" style={{ justifyContent: 'center' }}>
+            <Brand size={52} />
           </div>
-          <div style={{ fontSize: 22, fontWeight: 600, color: '#1D1B1E', textAlign: 'center', marginBottom: 4 }}>Inventario</div>
-          <div style={{ fontSize: 14, color: '#96989A', textAlign: 'center', marginBottom: 28 }}>Inicia sesión con tu cuenta</div>
-
-          <label style={{ fontSize: 13, color: '#96989A', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-            Correo
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tucorreo@disenartemx.com" style={input} />
-          </label>
-          <label style={{ fontSize: 13, color: '#96989A', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-            Contraseña
-            <div style={{ position: 'relative', display: 'flex' }}>
-              <input type={showPw ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={{ ...input, flex: 1, paddingRight: 70 }} />
-              <button type="button" onClick={() => setShowPw((v) => !v)} style={{ position: 'absolute', right: 8, top: 0, bottom: 0, border: 'none', background: 'none', color: '#A53692', fontSize: 12, cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>{showPw ? 'Ocultar' : 'Ver'}</button>
+          <form onSubmit={submit} className="tarjeta" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--morado)' }}>Iniciar sesión</h1>
+              <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--texto-3)' }}>Entra con tu correo de Diseñarte.</p>
             </div>
-          </label>
 
-          {error ? <div style={{ fontSize: 13, color: '#B3261E', marginTop: 10 }}>{error}</div> : null}
+            <label style={label}>
+              Correo
+              <input className="campo" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tucorreo@disenartemx.com" />
+            </label>
+            <label style={label}>
+              Contraseña
+              <div style={{ position: 'relative' }}>
+                <input className="campo" type={showPw ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} style={{ paddingRight: 84 }} />
+                <button type="button" className="btn btn-fantasma btn-sm" onClick={() => setShowPw((v) => !v)} style={{ position: 'absolute', right: 5, top: 5 }}>{showPw ? 'Ocultar' : 'Ver'}</button>
+              </div>
+            </label>
 
-          <button type="submit" disabled={loading} style={{ width: '100%', marginTop: 22, border: 'none', background: loading ? '#C98FC0' : '#A53692', color: '#fff', borderRadius: 12, padding: 14, fontSize: 15, fontWeight: 600, fontFamily: 'inherit', cursor: loading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-            {loading && <span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />}
-            {loading ? 'Entrando...' : 'Entrar'}
-          </button>
-        </form>
-      </div>
-      <div style={{ textAlign: 'center', fontSize: 12, color: '#96989A', padding: '0 0 20px' }}>disenartemx.com</div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+            {error && <div role="alert" style={{ fontSize: 14, color: 'var(--error)', background: 'var(--error-fondo)', borderRadius: 8, padding: '10px 12px' }}>{error}</div>}
+
+            <button type="submit" disabled={loading} className="btn btn-primario" style={{ width: '100%', minHeight: 42, marginTop: 4 }}>Entrar</button>
+          </form>
+        </div>
+      </section>
+    </main>
   );
 }
