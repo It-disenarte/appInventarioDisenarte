@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.vscode
+.env
+.env.*
+!.env.example
+npm-debug.log*
+Dockerfile
+.dockerignore
+README.md
+CLAUDE.md
+SKILL_APPS_WEB_CON_BD.md
