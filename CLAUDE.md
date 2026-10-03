@@ -20,7 +20,7 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - `pages/api/auth/{login,logout,me}.js`
 - `pages/api/groups/index.js` (GET; POST solo admin/super) y `[id].js` (PATCH label/area/color; DELETE en cascada; solo admin/super).
 - `pages/api/items/index.js` (GET, POST con campos fijos y `characteristics`) y `[id].js` (PATCH con `delta`: increment atómico en transacción, no baja de 0 y no registra movimientos sin cambio real; PATCH sin `delta`: edita nombre, reorden, campos fijos y `characteristics`; DELETE). Los campos fijos se limpian en `lib/itemFields.js`.
-- `pages/api/categories/index.js` (POST) y `[id].js` (PATCH nombre/unidad/schema; DELETE en cascada de items y movimientos). `schema` es la lista de características de la categoría; `Item.characteristics` guarda sus valores (`lib/characteristics.js` limpia ambos).
+- `pages/api/categories/index.js` (POST) y `[id].js` (PATCH nombre/unidad/schema; DELETE en cascada de items y movimientos). `schema` es la lista de características de la categoría; `Item.characteristics` guarda sus valores y también características extra propias del artículo (botón "Agregar característica" del formulario; hasta 20). `lib/characteristics.js` limpia ambos.
 - `pages/api/movements.js`: solo admin/super. GET; DELETE `?id=` borra uno, `?groupId=` vacía un grupo; sin parámetros responde 400 (ya no borra todo).
 - `pages/api/users/index.js` y `[id].js`: solo admin. Listar, crear, cambiar rol, eliminar. Rol validado contra `ROLE_KEYS`. El admin no puede borrarse ni quitarse el rol admin.
 - `lib/prisma.js`, `lib/auth.js`, `lib/permissions.js` (también lo importa el frontend), `lib/characteristics.js`

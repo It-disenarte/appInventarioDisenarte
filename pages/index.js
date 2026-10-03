@@ -8,6 +8,7 @@ import Icon from '../components/Icon';
 import { generalSteps, sectionSteps } from '../lib/guideSteps';
 import { canModify, canManageGroups, ROLE_KEYS, AREA_KEYS } from '../lib/permissions';
 import { taskWebUrl } from '../lib/zoho';
+import { extraKeys } from '../lib/characteristics';
 
 const COLORS = { primary: '#7C07A6', teal: '#5CC6D0', border: '#E4E1E8', muted: '#62606A', text: '#1D1B22', danger: '#B3261E', success: '#2E7D4F', warn: '#B45F06' };
 const ROLE_LABEL = { produccion: 'Producción', diseno: 'Diseño', super: 'Súper', admin: 'Admin' };
@@ -44,7 +45,9 @@ async function api(path, opts) {
 }
 
 const EXPIRY_WARN_DAYS = 30;
-const EMPTY_ITEM_FORM = { nombre: '', cantidad: '', reorden: '', codigo: '', metraje: '', proveedor: '', descripcion: '', caducidad: '', car: {} };
+// `car`: valores de las características de la categoría. `extra`: pares { key, value }
+// propios del artículo, que no están en la categoría.
+const EMPTY_ITEM_FORM = { nombre: '', cantidad: '', reorden: '', codigo: '', metraje: '', proveedor: '', descripcion: '', caducidad: '', car: {}, extra: [] };
 
 function charSummary(cat, item) {
   const values = item.characteristics || {};
@@ -53,7 +56,16 @@ function charSummary(cat, item) {
   if (item.metraje) parts.push(`Metraje: ${item.metraje}`);
   if (item.proveedor) parts.push(`Proveedor: ${item.proveedor}`);
   (cat.schema || []).filter((k) => values[k]).forEach((k) => parts.push(`${k}: ${values[k]}`));
+  extraKeys(cat.schema, values).forEach((k) => parts.push(`${k}: ${values[k]}`));
   return parts.join(' · ');
+}
+
+// Junta las características de la categoría y las extra en un solo objeto para la API.
+function formCharacteristics(form, schema) {
+  const out = {};
+  (form.extra || []).forEach(({ key, value }) => { const k = key.trim(); if (k) out[k] = value; });
+  schema.forEach((k) => { if ((form.car || {})[k]) out[k] = form.car[k]; });
+  return out;
 }
 
 // La caducidad es una fecha sin hora ('AAAA-MM-DD'); se compara contra el día local de hoy.
@@ -70,8 +82,12 @@ function expiryInfo(caducidad) {
   return { text: `Caduca ${fecha}`, color: COLORS.muted };
 }
 
-function itemToForm(it) {
-  return { nombre: it.name, reorden: String(it.reorder), codigo: it.codigo || '', metraje: it.metraje || '', proveedor: it.proveedor || '', descripcion: it.descripcion || '', caducidad: it.caducidad ? String(it.caducidad).slice(0, 10) : '', car: { ...(it.characteristics || {}) } };
+function itemToForm(it, schema) {
+  const values = it.characteristics || {};
+  const car = {};
+  (schema || []).forEach((k) => { if (values[k]) car[k] = values[k]; });
+  const extra = extraKeys(schema, values).map((k) => ({ key: k, value: values[k] }));
+  return { nombre: it.name, reorden: String(it.reorder), codigo: it.codigo || '', metraje: it.metraje || '', proveedor: it.proveedor || '', descripcion: it.descripcion || '', caducidad: it.caducidad ? String(it.caducidad).slice(0, 10) : '', car, extra };
 }
 
 export default function Home() {
@@ -285,21 +301,22 @@ export default function Home() {
       setMovements((s) => s.filter((mv) => mv.itemId !== item.id));
     }, 'Eliminando…');
   }
-  async function addItemToCategory(categoryId) {
+  async function addItemToCategory(cat) {
+    const categoryId = cat.id;
     const form = newItemForms[categoryId] || EMPTY_ITEM_FORM;
     if (!form.nombre.trim()) { showError(new Error('El nombre es obligatorio.')); return; }
     await withBusy(async () => {
-      await api('/api/items', { method: 'POST', body: JSON.stringify({ categoryId, name: form.nombre, qty: form.cantidad, reorder: form.reorden, codigo: form.codigo, metraje: form.metraje, proveedor: form.proveedor, descripcion: form.descripcion, caducidad: form.caducidad, characteristics: form.car || {} }) });
+      await api('/api/items', { method: 'POST', body: JSON.stringify({ categoryId, name: form.nombre, qty: form.cantidad, reorder: form.reorden, codigo: form.codigo, metraje: form.metraje, proveedor: form.proveedor, descripcion: form.descripcion, caducidad: form.caducidad, characteristics: formCharacteristics(form, cat.schema || []) }) });
       setNewItemForms((s) => ({ ...s, [categoryId]: EMPTY_ITEM_FORM }));
       setOpenNewItem(null);
       await reload('items', 'movements');
     });
   }
-  async function saveItemEdit(item) {
+  async function saveItemEdit(item, schema) {
     const f = editItemForm;
     if (!f.nombre.trim()) { showError(new Error('El nombre es obligatorio.')); return; }
     await withBusy(async () => {
-      const r = await api(`/api/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ name: f.nombre, reorder: f.reorden, codigo: f.codigo, metraje: f.metraje, proveedor: f.proveedor, descripcion: f.descripcion, caducidad: f.caducidad, characteristics: f.car }) });
+      const r = await api(`/api/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ name: f.nombre, reorder: f.reorden, codigo: f.codigo, metraje: f.metraje, proveedor: f.proveedor, descripcion: f.descripcion, caducidad: f.caducidad, characteristics: formCharacteristics(f, schema) }) });
       setItems((s) => s.map((i) => (i.id === item.id ? { ...i, ...r.item, category: i.category } : i)));
       setEditingItem(null);
     });
@@ -445,6 +462,8 @@ export default function Home() {
       </Field>
     );
     const number = { inputMode: 'numeric', pattern: '[0-9]*' };
+    const extra = form.extra || [];
+    const setExtra = (i, change) => patch({ extra: extra.map((row, j) => (j === i ? { ...row, ...change } : row)) });
     return (
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         {field('Nombre *', 'nombre', {}, '2 1 220px')}
@@ -459,6 +478,20 @@ export default function Home() {
             <input className="campo" value={(form.car || {})[k] || ''} onChange={(e) => patch({ car: { ...(form.car || {}), [k]: e.target.value } })} />
           </Field>
         ))}
+        {extra.map((row, i) => (
+          <div key={`extra-${i}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flex: '1 1 100%', flexWrap: 'wrap' }}>
+            <Field label="Característica" flex="1 1 140px">
+              <input className="campo" placeholder="p. ej. Acabado" maxLength={60} value={row.key} onChange={(e) => setExtra(i, { key: e.target.value })} />
+            </Field>
+            <Field label="Valor" flex="2 1 180px">
+              <input className="campo" value={row.value} onChange={(e) => setExtra(i, { value: e.target.value })} />
+            </Field>
+            <button type="button" onClick={() => patch({ extra: extra.filter((_, j) => j !== i) })} className="btn btn-fantasma" aria-label="Quitar característica" style={{ width: 42, height: 42, padding: 0 }}><Icon name="x" size={16} /></button>
+          </div>
+        ))}
+        <div style={{ flex: '1 1 100%' }}>
+          <button type="button" onClick={() => patch({ extra: [...extra, { key: '', value: '' }] })} className="btn btn-fantasma btn-sm"><Icon name="plus" size={14} />Agregar característica</button>
+        </div>
         <Field label="Descripción" flex="1 1 100%">
           <textarea className="campo" rows={2} value={form.descripcion || ''} onChange={(e) => patch({ descripcion: e.target.value })} />
         </Field>
@@ -568,7 +601,7 @@ export default function Home() {
                           </div>
                           {groupCanModify && !isEditing && (
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, marginTop: 8 }}>
-                              <button data-guide="item-edit" onClick={() => { setEditingItem(it.id); setEditItemForm(itemToForm(it)); }} className="btn btn-fantasma btn-sm"><Icon name="pencil" size={14} />Editar</button>
+                              <button data-guide="item-edit" onClick={() => { setEditingItem(it.id); setEditItemForm(itemToForm(it, schema)); }} className="btn btn-fantasma btn-sm"><Icon name="pencil" size={14} />Editar</button>
                               <button data-guide="item-delete" onClick={() => deleteItemRow(it)} className="btn btn-peligro btn-sm"><Icon name="trash" size={14} />Eliminar</button>
                             </div>
                           )}
@@ -576,7 +609,7 @@ export default function Home() {
                             <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.border}` }}>
                               {itemForm(editItemForm, (p) => setEditItemForm((f) => ({ ...f, ...p })), schema, false)}
                               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                                <button onClick={() => saveItemEdit(it)} className="btn btn-primario">Guardar</button>
+                                <button onClick={() => saveItemEdit(it, schema)} className="btn btn-primario">Guardar</button>
                                 <button onClick={() => setEditingItem(null)} className="btn btn-contorno">Cancelar</button>
                               </div>
                             </div>
@@ -590,7 +623,7 @@ export default function Home() {
                       <h3 style={cardTitle}>Nuevo artículo en {cat.name}</h3>
                       {itemForm(form, setForm, schema, true)}
                       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                        <button onClick={() => addItemToCategory(cat.id)} className="btn btn-primario">Agregar</button>
+                        <button onClick={() => addItemToCategory(cat)} className="btn btn-primario">Agregar</button>
                         <button onClick={() => setOpenNewItem(null)} className="btn btn-contorno">Cancelar</button>
                       </div>
                     </div>
