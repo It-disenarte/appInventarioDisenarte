@@ -1,5 +1,5 @@
 import { prisma } from '../../../lib/prisma';
-import { getSessionFromReq, hashPassword } from '../../../lib/auth';
+import { getSessionFromReq, hashPassword, MIN_PASSWORD } from '../../../lib/auth';
 import { ROLE_KEYS } from '../../../lib/permissions';
 
 export default async function handler(req, res) {
@@ -15,6 +15,7 @@ export default async function handler(req, res) {
     const { email, name, password, role } = req.body || {};
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail || !name || !String(name).trim() || !password) return res.status(400).json({ error: 'Faltan datos.' });
+    if (String(password).length < MIN_PASSWORD) return res.status(400).json({ error: `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.` });
     const finalRole = role || 'produccion';
     if (!ROLE_KEYS.includes(finalRole)) return res.status(400).json({ error: 'Rol inválido.' });
     const existing = await prisma.user.findUnique({ where: { email: cleanEmail } });

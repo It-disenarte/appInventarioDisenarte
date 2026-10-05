@@ -20,6 +20,8 @@ const cardTitle = { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: CO
 const meta = { fontSize: 13, color: COLORS.muted };
 const chipBtn = (active) => ({ minHeight: 34, border: `1px solid ${active ? COLORS.primary : '#D6D2DC'}`, background: active ? 'rgba(124,7,166,.08)' : '#fff', color: active ? COLORS.primary : COLORS.text, borderRadius: 8, padding: '0 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer' });
 const onlyDigits = (v) => v.replace(/\D/g, '');
+const MIN_PASSWORD = 8;
+const EMPTY_PW_FORM = { current: '', next: '', confirm: '' };
 
 function Field({ label, flex, children }) {
   return <label style={{ ...labelStyle, flex: flex || '1 1 160px' }}>{label}{children}</label>;
@@ -115,6 +117,10 @@ export default function Home() {
   const [editGroupForm, setEditGroupForm] = useState({ label: '', area: 'produccion', color: COLORS.primary });
   const [busy, setBusy] = useState(null); // mensaje de la pantalla de carga, o null
   const [showNewUserPw, setShowNewUserPw] = useState(false);
+  const [pwForm, setPwForm] = useState(EMPTY_PW_FORM);
+  const [showPw, setShowPw] = useState(false);
+  const [pwDone, setPwDone] = useState(false);
+  const [resetPw, setResetPw] = useState(null); // { id, password } del usuario al que el admin le restablece la contraseña
   const [confirmState, setConfirmState] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isWide, setIsWide] = useState(false);
@@ -381,8 +387,27 @@ export default function Home() {
     if (!(await ask({ title: 'Eliminar usuario', message: `${u.name} (${u.email}) ya no podrá entrar a la app.`, confirmLabel: 'Eliminar', danger: true }))) return;
     await withBusy(async () => { await api(`/api/users/${u.id}`, { method: 'DELETE' }); setUsers((s) => s.filter((x) => x.id !== u.id)); }, 'Eliminando…');
   }
+  async function changeMyPassword() {
+    if (!pwForm.current || !pwForm.next) return;
+    if (pwForm.next.length < MIN_PASSWORD) { showError(new Error(`La nueva contraseña debe tener al menos ${MIN_PASSWORD} caracteres.`)); return; }
+    if (pwForm.next !== pwForm.confirm) { showError(new Error('La confirmación no coincide con la nueva contraseña.')); return; }
+    await withBusy(async () => {
+      await api('/api/profile', { method: 'PATCH', body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }) });
+      setPwForm(EMPTY_PW_FORM);
+      setShowPw(false);
+      setPwDone(true);
+    });
+  }
+  async function saveResetPassword(u) {
+    if (resetPw.password.length < MIN_PASSWORD) { showError(new Error(`La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.`)); return; }
+    await withBusy(async () => {
+      await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ password: resetPw.password }) });
+      setResetPw(null);
+    });
+  }
   async function addUserAccount() {
     if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password) return;
+    if (newUser.password.length < MIN_PASSWORD) { showError(new Error(`La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.`)); return; }
     await withBusy(async () => {
       await api('/api/users', { method: 'POST', body: JSON.stringify(newUser) });
       setNewUser({ name: '', email: '', password: '', role: 'produccion' });
@@ -771,8 +796,18 @@ export default function Home() {
                         </button>
                       ))}
                     </div>
+                    {!isMe && <button data-guide="user-password" onClick={() => setResetPw(resetPw && resetPw.id === u.id ? null : { id: u.id, password: '' })} className="btn btn-fantasma btn-sm"><Icon name="key" size={14} />Contraseña</button>}
                     <button data-guide="user-delete" onClick={() => deleteUserRow(u)} disabled={isMe} className="btn btn-peligro btn-sm"><Icon name="trash" size={14} />Eliminar</button>
                   </div>
+                  {resetPw && resetPw.id === u.id && (
+                    <div style={{ flexBasis: '100%', display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                      <Field label={`Nueva contraseña para ${u.name}`} flex="1 1 220px">
+                        <input className="campo" type="text" autoComplete="off" autoFocus value={resetPw.password} onChange={(e) => setResetPw((s) => ({ ...s, password: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') saveResetPassword(u); }} />
+                      </Field>
+                      <button onClick={() => saveResetPassword(u)} className="btn btn-primario">Guardar</button>
+                      <button onClick={() => setResetPw(null)} className="btn btn-contorno">Cancelar</button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -827,6 +862,23 @@ export default function Home() {
               </div>
               <button onClick={replayGuideEverywhere} className="btn btn-fantasma" style={{ marginTop: 12, marginLeft: -10 }}>Ver guía ahora</button>
             </div>
+            <form data-guide="profile-password" className="tarjeta" style={{ padding: 18 }} onSubmit={(e) => { e.preventDefault(); changeMyPassword(); }}>
+              <h3 style={cardTitle}>Cambiar contraseña</h3>
+              <input type="email" autoComplete="username" value={user.email} readOnly hidden />
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {[['current', 'Contraseña actual', 'current-password'], ['next', 'Nueva contraseña', 'new-password'], ['confirm', 'Confirmar nueva', 'new-password']].map(([key, label, ac]) => (
+                  <Field key={key} label={label}>
+                    <input className="campo" type={showPw ? 'text' : 'password'} autoComplete={ac} value={pwForm[key]} onChange={(e) => { setPwDone(false); setPwForm((f) => ({ ...f, [key]: e.target.value })); }} />
+                  </Field>
+                ))}
+              </div>
+              <div style={{ ...meta, marginTop: 8 }}>Mínimo {MIN_PASSWORD} caracteres.</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                <button type="submit" className="btn btn-primario" disabled={!pwForm.current || !pwForm.next || !pwForm.confirm}>Cambiar contraseña</button>
+                <button type="button" onClick={() => setShowPw((v) => !v)} className="btn btn-fantasma">{showPw ? 'Ocultar' : 'Ver'}</button>
+                {pwDone && <span role="status" style={{ fontSize: 14, fontWeight: 500, color: COLORS.success }}>Contraseña actualizada.</span>}
+              </div>
+            </form>
           </div>
         )}
       </main>
