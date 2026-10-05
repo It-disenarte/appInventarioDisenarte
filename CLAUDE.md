@@ -3,13 +3,13 @@
 Contexto para continuar el desarrollo con Claude Code.
 
 ## Qué es
-App web interna de inventario para Diseñarte México (agencia de publicidad, San Juan del Río, Qro.). Ya está en producción en Vercel y conectada a Postgres en el VPS de Hostinger.
+App web interna de inventario para Diseñarte México (agencia de publicidad, San Juan del Río, Qro.). Ya está en producción en el VPS de Hostinger (Easypanel, con Docker), conectada a Postgres en el mismo VPS.
 
 ## Stack
 - Next.js 14 (Pages Router), JavaScript plano (sin TypeScript)
 - Prisma 5 + PostgreSQL 17 (servicio `inventario-db` en el proyecto `hub_disenarte` del VPS Hostinger, puerto 5432 expuesto)
 - Auth propia: JWT (`jsonwebtoken`) en cookie `session` httpOnly/secure/sameSite=lax, 30 días. Passwords con `bcryptjs`. `getSessionFromReq` (async) solo toma el `id` del JWT y relee nombre/rol de la BD en cada petición: cambios de rol y usuarios eliminados surten efecto de inmediato.
-- Deploy: GitHub `It-disenarte/appInventarioDisenarte` (branch `main`) → Vercel. Variables en Vercel: `DATABASE_URL`, `JWT_SECRET`.
+- Deploy: GitHub `It-disenarte/appInventarioDisenarte` (branch `main`) → Easypanel en el VPS de Hostinger, que construye la imagen con el `Dockerfile` (Next.js `output: standalone` + Prisma, Debian slim). Variables en el servicio de Easypanel: `DATABASE_URL`, `JWT_SECRET` (y las `ZOHO_*`). Ya no se usa Vercel.
 - PWA instalable (manifest + service worker network-first que cachea solo páginas/estáticos, nunca `/api`).
 
 ## Estructura
@@ -56,13 +56,13 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 ## Comandos
 - `npm install`
 - `npm run dev`: localhost:3000 contra la BD remota real (local y producción comparten la BD).
-- `npx prisma db push`: cambios de esquema contra la BD de Hostinger. La BD no tiene historial de migraciones (no existe `prisma/migrations`), así que NO usar `migrate dev`: pediría resetear la BD de producción. Vercel no migra solo: aplicar el esquema ANTES de desplegar código que use columnas nuevas.
+- `npx prisma db push`: cambios de esquema contra la BD de Hostinger. La BD no tiene historial de migraciones (no existe `prisma/migrations`), así que NO usar `migrate dev`: pediría resetear la BD de producción. El deploy no migra solo: aplicar el esquema ANTES de desplegar código que use columnas nuevas.
 - `npx prisma db seed`
-- `package.json` tiene `"postinstall": "prisma generate"`, que Vercel necesita.
+- `package.json` tiene `"postinstall": "prisma generate"` (el Dockerfile copia `prisma/` antes de `npm ci` para que funcione).
 
 ## Errores conocidos
-- `PrismaClientInitializationError` en Vercel: falta `postinstall: prisma generate`.
-- Error 500 en login: revisar Vercel → Logs. Casi siempre es la conexión a la BD o una env var faltante.
+- `PrismaClientInitializationError`: falta `prisma generate` o el motor de Prisma en la imagen (revisar Dockerfile).
+- Error 500 en login: revisar los logs del servicio en Easypanel. Casi siempre es la conexión a la BD o una env var faltante.
 
 ## Pendientes / ideas
 - Decidir si se limita a una sesión por usuario.
@@ -71,4 +71,4 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 
 ## Seguridad
 - Nunca commitear `.env`, que ya está en `.gitignore`.
-- La contraseña de la BD y la del admin viven solo en `.env` y en Vercel. Considerar rotar la contraseña de la BD, porque se compartió en chat.
+- La contraseña de la BD y la del admin viven solo en `.env` y en las variables de Easypanel. Considerar rotar la contraseña de la BD, porque se compartió en chat.
