@@ -1,6 +1,6 @@
 import { prisma } from '../../../lib/prisma';
-import { getSessionFromReq, hashPassword, MIN_PASSWORD } from '../../../lib/auth';
-import { ROLE_KEYS } from '../../../lib/permissions';
+import { getSessionFromReq, hashPassword, generateTempPassword } from '../../../lib/auth';
+import { normalizeRoles } from '../../../lib/permissions';
 
 export default async function handler(req, res) {
   const session = await getSessionFromReq(req);
@@ -11,18 +11,21 @@ export default async function handler(req, res) {
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado.' });
 
   if (req.method === 'PATCH') {
-    const { role, password } = req.body || {};
-    // Restablecer la contraseña de otra persona (la propia se cambia en Mi perfil, con la actual).
-    if (password !== undefined) {
+    const { role, resetPassword } = req.body || {};
+    // Restablecer: genera una contraseña provisional que la persona debe cambiar al entrar.
+    // Sus sesiones abiertas dejan de valer de inmediato (getSessionFromReq rechaza mustChangePassword).
+    if (resetPassword) {
       if (session.id === id) return res.status(400).json({ error: 'Cambia tu contraseña desde Mi perfil.' });
-      if (typeof password !== 'string' || password.length < MIN_PASSWORD) return res.status(400).json({ error: `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.` });
-      await prisma.user.update({ where: { id }, data: { passwordHash: await hashPassword(password) } });
-      return res.status(200).json({ ok: true });
+      const tempPassword = generateTempPassword();
+      await prisma.user.update({ where: { id }, data: { passwordHash: await hashPassword(tempPassword), mustChangePassword: true } });
+      return res.status(200).json({ tempPassword });
     }
-    if (!ROLE_KEYS.includes(role)) return res.status(400).json({ error: 'Rol inválido.' });
+    // role: uno o varios (arreglo o "produccion,diseno"). Súper y Admin no se combinan con otros.
+    const finalRole = normalizeRoles(role);
+    if (!finalRole) return res.status(400).json({ error: 'Rol inválido.' });
     // Evita que el admin se quite el rol y la app se quede sin administrador.
-    if (session.id === id && role !== 'admin') return res.status(400).json({ error: 'No puedes quitarte el rol de administrador.' });
-    const user = await prisma.user.update({ where: { id }, data: { role } });
+    if (session.id === id && finalRole !== 'admin') return res.status(400).json({ error: 'No puedes quitarte el rol de administrador.' });
+    const user = await prisma.user.update({ where: { id }, data: { role: finalRole } });
     return res.status(200).json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   }
 

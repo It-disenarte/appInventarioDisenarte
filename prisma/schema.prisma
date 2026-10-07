@@ -8,13 +8,15 @@ datasource db {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
-  name         String
-  passwordHash String
-  role         String
-  showGuide    Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id                 Int      @id @default(autoincrement())
+  email              String   @unique
+  name               String
+  passwordHash       String
+  role               String
+  showGuide          Boolean  @default(true)
+  // true tras un restablecimiento del admin: debe crear su propia contraseña antes de usar la app.
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
 }
 
 model Group {
@@ -27,12 +29,12 @@ model Group {
 }
 
 model Category {
-  id      Int      @id @default(autoincrement())
+  id      Int    @id @default(autoincrement())
   name    String
   unit    String
-  schema  Json     @default("[]")
+  schema  Json   @default("[]")
   groupId Int
-  group   Group    @relation(fields: [groupId], references: [id])
+  group   Group  @relation(fields: [groupId], references: [id])
   items   Item[]
 }
 

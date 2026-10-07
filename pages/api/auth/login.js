@@ -10,5 +10,5 @@ export default async function handler(req, res) {
   if (!ok) return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
   const token = signSession(user);
   res.setHeader('Set-Cookie', 'session=' + token + '; HttpOnly; Path=/; Max-Age=2592000; SameSite=Lax; Secure');
-  res.status(200).json({ user: { email: user.email, name: user.name, role: user.role } });
+  res.status(200).json({ user: { email: user.email, name: user.name, role: user.role }, mustChangePassword: user.mustChangePassword });
 }

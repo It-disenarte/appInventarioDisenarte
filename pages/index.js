@@ -6,7 +6,7 @@ import SideMenu, { SIDE_MENU_WIDTH } from '../components/SideMenu';
 import GuideTour from '../components/GuideTour';
 import Icon from '../components/Icon';
 import { generalSteps, sectionSteps } from '../lib/guideSteps';
-import { canModify, canManageGroups, ROLE_KEYS, AREA_KEYS } from '../lib/permissions';
+import { canModify, canManageGroups, ROLE_KEYS, AREA_KEYS, EXCLUSIVE_ROLES, parseRoles, hasRole, roleLabel } from '../lib/permissions';
 import { taskWebUrl } from '../lib/zoho';
 import { extraKeys } from '../lib/characteristics';
 
@@ -37,6 +37,15 @@ function EmptyState({ children }) {
 }
 
 function seesMovements(role) { return role === 'admin' || role === 'super'; }
+
+// Producción y Diseño se suman o quitan (al menos uno queda); Súper y Admin reemplazan a los demás.
+function toggleRole(current, r) {
+  if (EXCLUSIVE_ROLES.includes(r)) return r;
+  const areas = parseRoles(current).filter((x) => !EXCLUSIVE_ROLES.includes(x));
+  const next = areas.includes(r) ? areas.filter((x) => x !== r) : [...areas, r];
+  if (!next.length) return current;
+  return ROLE_KEYS.filter((x) => next.includes(x)).join(',');
+}
 
 async function api(path, opts) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -120,7 +129,7 @@ export default function Home() {
   const [pwForm, setPwForm] = useState(EMPTY_PW_FORM);
   const [showPw, setShowPw] = useState(false);
   const [pwDone, setPwDone] = useState(false);
-  const [resetPw, setResetPw] = useState(null); // { id, password } del usuario al que el admin le restablece la contraseña
+  const [tempPw, setTempPw] = useState(null); // { id, password, copied }: provisional recién generada por el admin
   const [confirmState, setConfirmState] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isWide, setIsWide] = useState(false);
@@ -398,12 +407,17 @@ export default function Home() {
       setPwDone(true);
     });
   }
-  async function saveResetPassword(u) {
-    if (resetPw.password.length < MIN_PASSWORD) { showError(new Error(`La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.`)); return; }
+  async function resetUserPassword(u) {
+    if (!(await ask({ title: 'Restablecer contraseña', message: `Se generará una contraseña provisional para ${u.name}. Su contraseña actual dejará de funcionar y, al entrar con la provisional, tendrá que crear una nueva.`, confirmLabel: 'Generar' }))) return;
     await withBusy(async () => {
-      await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ password: resetPw.password }) });
-      setResetPw(null);
-    });
+      const r = await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ resetPassword: true }) });
+      setTempPw({ id: u.id, password: r.tempPassword, copied: false });
+      setUsers((s) => s.map((x) => (x.id === u.id ? { ...x, mustChangePassword: true } : x)));
+    }, 'Generando…');
+  }
+  async function copyTempPassword() {
+    try { await navigator.clipboard.writeText(tempPw.password); setTempPw((t) => ({ ...t, copied: true })); }
+    catch (e) { showError(new Error('No se pudo copiar. Selecciona la contraseña y cópiala a mano.')); }
   }
   async function addUserAccount() {
     if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password) return;
@@ -537,7 +551,7 @@ export default function Home() {
         open={menuOpen} persistent={isWide} onClose={closeMenu}
         groups={groups} groupId={currentGroup ? currentGroup.id : null} onSelectGroup={selectGroup}
         views={views} adminViews={adminViews} section={section} onSelectSection={selectSection}
-        user={user} roleLabel={ROLE_LABEL[user.role]} onLogout={logout}
+        user={user} roleLabel={roleLabel(user.role)} onLogout={logout}
         showGuide={user.showGuide} onToggleGuide={toggleGuideFromMenu} onHelp={helpFromMenu}
         onInstall={installEvent ? installApp : null}
       />
@@ -791,22 +805,25 @@ export default function Home() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <div data-guide="user-roles" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {ROLE_KEYS.map((r) => (
-                        <button key={r} onClick={() => setRole(u, r)} disabled={isMe && r !== 'admin'} style={{ ...chipBtn(u.role === r), opacity: isMe && r !== 'admin' ? 0.4 : 1, cursor: isMe && r !== 'admin' ? 'default' : 'pointer' }}>
+                        <button key={r} onClick={() => { const next = toggleRole(u.role, r); if (next !== u.role) setRole(u, next); }} disabled={isMe && r !== 'admin'} aria-pressed={hasRole(u.role, r)} style={{ ...chipBtn(hasRole(u.role, r)), opacity: isMe && r !== 'admin' ? 0.4 : 1, cursor: isMe && r !== 'admin' ? 'default' : 'pointer' }}>
                           {ROLE_LABEL[r]}
                         </button>
                       ))}
                     </div>
-                    {!isMe && <button data-guide="user-password" onClick={() => setResetPw(resetPw && resetPw.id === u.id ? null : { id: u.id, password: '' })} className="btn btn-fantasma btn-sm"><Icon name="key" size={14} />Contraseña</button>}
+                    {!isMe && <button data-guide="user-password" onClick={() => resetUserPassword(u)} className="btn btn-fantasma btn-sm"><Icon name="key" size={14} />Contraseña</button>}
                     <button data-guide="user-delete" onClick={() => deleteUserRow(u)} disabled={isMe} className="btn btn-peligro btn-sm"><Icon name="trash" size={14} />Eliminar</button>
                   </div>
-                  {resetPw && resetPw.id === u.id && (
-                    <div style={{ flexBasis: '100%', display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                      <Field label={`Nueva contraseña para ${u.name}`} flex="1 1 220px">
-                        <input className="campo" type="text" autoComplete="off" autoFocus value={resetPw.password} onChange={(e) => setResetPw((s) => ({ ...s, password: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') saveResetPassword(u); }} />
-                      </Field>
-                      <button onClick={() => saveResetPassword(u)} className="btn btn-primario">Guardar</button>
-                      <button onClick={() => setResetPw(null)} className="btn btn-contorno">Cancelar</button>
+                  {tempPw && tempPw.id === u.id ? (
+                    <div style={{ flexBasis: '100%', border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={meta}>Contraseña provisional de {u.name}. Compártela por un medio privado; solo se muestra esta vez.</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                        <code style={{ fontSize: 18, fontWeight: 600, letterSpacing: 1, color: COLORS.text, userSelect: 'all' }}>{tempPw.password}</code>
+                        <button onClick={copyTempPassword} className="btn btn-contorno btn-sm">{tempPw.copied ? 'Copiada' : 'Copiar'}</button>
+                        <button onClick={() => setTempPw(null)} className="btn btn-fantasma btn-sm">Listo</button>
+                      </div>
                     </div>
+                  ) : u.mustChangePassword && (
+                    <div style={{ flexBasis: '100%', ...meta }}>Contraseña provisional: la cambiará al entrar.</div>
                   )}
                 </div>
               );
@@ -827,7 +844,7 @@ export default function Home() {
                 Rol
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {ROLE_KEYS.map((r) => (
-                    <button key={r} type="button" onClick={() => setNewUser((u) => ({ ...u, role: r }))} style={chipBtn(newUser.role === r)}>
+                    <button key={r} type="button" onClick={() => setNewUser((u) => ({ ...u, role: toggleRole(u.role, r) }))} aria-pressed={hasRole(newUser.role, r)} style={chipBtn(hasRole(newUser.role, r))}>
                       {ROLE_LABEL[r]}
                     </button>
                   ))}
@@ -845,7 +862,7 @@ export default function Home() {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 600 }}>{user.name}</div>
                 <div style={{ ...meta, overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
-                <div style={{ display: 'inline-block', marginTop: 6, fontSize: 12, fontWeight: 600, color: COLORS.primary, background: 'var(--muted)', borderRadius: 6, padding: '2px 8px' }}>{ROLE_LABEL[user.role]}</div>
+                <div style={{ display: 'inline-block', marginTop: 6, fontSize: 12, fontWeight: 600, color: COLORS.primary, background: 'var(--muted)', borderRadius: 6, padding: '2px 8px' }}>{roleLabel(user.role)}</div>
               </div>
             </div>
             <div data-guide="profile-guide" className="tarjeta" style={{ padding: 18 }}>
@@ -862,7 +879,7 @@ export default function Home() {
               </div>
               <button onClick={replayGuideEverywhere} className="btn btn-fantasma" style={{ marginTop: 12, marginLeft: -10 }}>Ver guía ahora</button>
             </div>
-            <form data-guide="profile-password" className="tarjeta" style={{ padding: 18 }} onSubmit={(e) => { e.preventDefault(); changeMyPassword(); }}>
+            {user.role === 'admin' && <form data-guide="profile-password" className="tarjeta" style={{ padding: 18 }} onSubmit={(e) => { e.preventDefault(); changeMyPassword(); }}>
               <h3 style={cardTitle}>Cambiar contraseña</h3>
               <input type="email" autoComplete="username" value={user.email} readOnly hidden />
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -878,7 +895,7 @@ export default function Home() {
                 <button type="button" onClick={() => setShowPw((v) => !v)} className="btn btn-fantasma">{showPw ? 'Ocultar' : 'Ver'}</button>
                 {pwDone && <span role="status" style={{ fontSize: 14, fontWeight: 500, color: COLORS.success }}>Contraseña actualizada.</span>}
               </div>
-            </form>
+            </form>}
           </div>
         )}
       </main>
