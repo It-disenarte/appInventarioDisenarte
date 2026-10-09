@@ -294,19 +294,18 @@ export default function Home() {
   async function requestRestock(item) {
     const unit = item.category.unit;
     if (!(await ask({ title: 'Solicitar reabastecimiento', message: `Se creará una solicitud en Zoho Projects (DI-5 · Gestión de Compras y Materiales, columna Solicitud) para "${item.name}".\nExistencia: ${item.qty} ${unit} · reorden: ${item.reorder} ${unit}.`, confirmLabel: 'Solicitar' }))) return;
-    // La pestaña se abre aquí, todavía dentro del clic, para que el navegador no la bloquee.
-    const win = window.open('about:blank', '_blank');
+    let task = null;
     await withBusy(async () => {
       try {
         const r = await api('/api/zoho/restock', { method: 'POST', body: JSON.stringify({ itemId: item.id }) });
         setItems((s) => s.map((i) => (i.id === item.id ? { ...i, zohoTaskId: r.item.zohoTaskId, zohoRequestedAt: r.item.zohoRequestedAt } : i)));
-        if (win) win.location.href = r.task.url;
+        task = r.task;
       } catch (e) {
-        if (win) win.close();
         if (e.status === 409) await reload('items');
         throw e;
       }
     }, 'Enviando la solicitud a Zoho…');
+    if (task) await ask({ title: 'Reabastecimiento solicitado', message: `La solicitud de "${item.name}" quedó en Zoho Projects (DI-5 · columna Solicitud). Si quieres verla, entra aquí:`, link: { href: task.url, label: 'Ver la solicitud en Zoho ↗' }, confirmLabel: 'Entendido', info: true });
   }
   async function deleteItemRow(item) {
     if (!(await ask({ title: 'Eliminar artículo', message: `Se eliminará "${item.name}" junto con su historial de movimientos.`, confirmLabel: 'Eliminar', danger: true }))) return;
@@ -544,7 +543,7 @@ export default function Home() {
         <GuideTour steps={guideSteps} onClose={closeGuide} onDisable={() => setGuidePreference(false)} onMenu={setMenuFromGuide} sideMenu={isWide} />
       )}
       {confirmState && (
-        <ConfirmDialog title={confirmState.title} message={confirmState.message} confirmLabel={confirmState.confirmLabel} danger={confirmState.danger} onConfirm={() => answerConfirm(true)} onCancel={cancelConfirm} />
+        <ConfirmDialog title={confirmState.title} message={confirmState.message} confirmLabel={confirmState.confirmLabel} danger={confirmState.danger} info={confirmState.info} link={confirmState.link} onConfirm={() => answerConfirm(true)} onCancel={cancelConfirm} />
       )}
       {busy && <LoadingOverlay message={busy} />}
       <SideMenu
