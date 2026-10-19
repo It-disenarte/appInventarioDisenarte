@@ -8,6 +8,7 @@ import Icon from '../components/Icon';
 import { generalSteps, sectionSteps } from '../lib/guideSteps';
 import { canModify, canManageGroups, ROLE_KEYS, AREA_KEYS, EXCLUSIVE_ROLES, parseRoles, hasRole, roleLabel } from '../lib/permissions';
 import { taskWebUrl } from '../lib/zoho';
+import { formatQty } from '../lib/itemFields';
 import { extraKeys } from '../lib/characteristics';
 
 const COLORS = { primary: '#7C07A6', teal: '#5CC6D0', border: '#E4E1E8', muted: '#62606A', text: '#1D1B22', danger: '#B3261E', success: '#2E7D4F', warn: '#B45F06' };
@@ -25,6 +26,16 @@ const EMPTY_PW_FORM = { current: '', next: '', confirm: '' };
 
 function Field({ label, flex, children }) {
   return <label style={{ ...labelStyle, flex: flex || '1 1 160px' }}>{label}{children}</label>;
+}
+
+// Casilla "Permite medias piezas" de los formularios de categoría.
+function HalfToggle({ checked, onChange }) {
+  return (
+    <label data-guide="cat-half" style={{ flex: '1 1 100%', display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: COLORS.text, cursor: 'pointer' }}>
+      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: 3, accentColor: COLORS.primary }} />
+      <span>Permite medias piezas<span style={{ display: 'block', fontSize: 12, color: COLORS.muted }}>Para material que se corta (acrílico, MDF): sus artículos muestran el botón −½.</span></span>
+    </label>
+  );
 }
 
 function EmptyState({ children }) {
@@ -113,10 +124,10 @@ export default function Home() {
   const [groupId, setGroupId] = useState(null);
   const [section, setSection] = useState('inventarios');
   const [error, setError] = useState('');
-  const [newCat, setNewCat] = useState({ name: '', unit: '', schema: '' });
+  const [newCat, setNewCat] = useState({ name: '', unit: '', schema: '', allowHalf: false });
   const [newItemForms, setNewItemForms] = useState({});
   const [editingCat, setEditingCat] = useState(null);
-  const [editCatForm, setEditCatForm] = useState({ name: '', unit: '', schema: '' });
+  const [editCatForm, setEditCatForm] = useState({ name: '', unit: '', schema: '', allowHalf: false });
   const [editingItem, setEditingItem] = useState(null);
   const [editItemForm, setEditItemForm] = useState(EMPTY_ITEM_FORM);
   const [openNewItem, setOpenNewItem] = useState(null);
@@ -293,7 +304,7 @@ export default function Home() {
   }
   async function requestRestock(item) {
     const unit = item.category.unit;
-    if (!(await ask({ title: 'Solicitar reabastecimiento', message: `Se creará una solicitud en Zoho Projects (DI-5 · Gestión de Compras y Materiales, columna Solicitud) para "${item.name}".\nExistencia: ${item.qty} ${unit} · reorden: ${item.reorder} ${unit}.`, confirmLabel: 'Solicitar' }))) return;
+    if (!(await ask({ title: 'Solicitar reabastecimiento', message: `Se creará una solicitud en Zoho Projects (DI-5 · Gestión de Compras y Materiales, columna Solicitud) para "${item.name}".\nExistencia: ${formatQty(item.qty)} ${unit} · reorden: ${item.reorder} ${unit}.`, confirmLabel: 'Solicitar' }))) return;
     let task = null;
     await withBusy(async () => {
       try {
@@ -338,14 +349,14 @@ export default function Home() {
   async function addCategory() {
     if (!newCat.name.trim()) return;
     await withBusy(async () => {
-      await api('/api/categories', { method: 'POST', body: JSON.stringify({ groupId, name: newCat.name, unit: newCat.unit || 'piezas', schema: newCat.schema }) });
-      setNewCat({ name: '', unit: '', schema: '' });
+      await api('/api/categories', { method: 'POST', body: JSON.stringify({ groupId, name: newCat.name, unit: newCat.unit || 'piezas', schema: newCat.schema, allowHalf: newCat.allowHalf }) });
+      setNewCat({ name: '', unit: '', schema: '', allowHalf: false });
       await reload('groups');
     });
   }
   async function saveEditCategory(cat) {
     await withBusy(async () => {
-      await api(`/api/categories/${cat.id}`, { method: 'PATCH', body: JSON.stringify({ name: editCatForm.name, unit: editCatForm.unit, schema: editCatForm.schema }) });
+      await api(`/api/categories/${cat.id}`, { method: 'PATCH', body: JSON.stringify({ name: editCatForm.name, unit: editCatForm.unit, schema: editCatForm.schema, allowHalf: editCatForm.allowHalf }) });
       setEditingCat(null);
       await reload('groups');
     });
@@ -380,7 +391,7 @@ export default function Home() {
     await withBusy(async () => { await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ role }) }); await reload('users'); });
   }
   async function deleteMovementRow(mv) {
-    if (!(await ask({ title: 'Eliminar movimiento', message: `Se eliminará el registro de "${mv.item.name}" (${mv.delta > 0 ? '+' : ''}${mv.delta}). La cantidad actual del artículo no cambia.`, confirmLabel: 'Eliminar', danger: true }))) return;
+    if (!(await ask({ title: 'Eliminar movimiento', message: `Se eliminará el registro de "${mv.item.name}" (${mv.delta > 0 ? '+' : ''}${formatQty(mv.delta)}). La cantidad actual del artículo no cambia.`, confirmLabel: 'Eliminar', danger: true }))) return;
     await withBusy(async () => { await api(`/api/movements?id=${mv.id}`, { method: 'DELETE' }); setMovements((s) => s.filter((m) => m.id !== mv.id)); }, 'Eliminando…');
   }
   async function clearMovements() {
@@ -628,9 +639,12 @@ export default function Home() {
                               ))}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginLeft: 'auto' }}>
-                              <div data-guide="item-qty" style={{ fontSize: 22, fontWeight: 700, whiteSpace: 'nowrap' }}>{it.qty}<span style={{ fontSize: 12, fontWeight: 400, color: COLORS.muted }}> {cat.unit}</span></div>
+                              <div data-guide="item-qty" style={{ fontSize: 22, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatQty(it.qty)}<span style={{ fontSize: 12, fontWeight: 400, color: COLORS.muted }}> {cat.unit}</span></div>
                               {groupCanModify && (
                                 <div style={{ display: 'flex', gap: 6 }}>
+                                  {cat.allowHalf && (
+                                    <button data-guide="item-half" onClick={() => adjustItem(it, -0.5)} disabled={it.qty < 0.5} className="btn btn-contorno" aria-label={`Restar media pieza a ${it.name}`} style={{ width: 38, height: 38, padding: 0, fontSize: 14, fontWeight: 600 }}>−½</button>
+                                  )}
                                   <button data-guide="item-minus" onClick={() => adjustItem(it, -1)} disabled={it.qty === 0} className="btn btn-contorno" aria-label={`Restar 1 a ${it.name}`} style={{ width: 38, height: 38, padding: 0 }}><Icon name="minus" size={18} /></button>
                                   <button data-guide="item-plus" onClick={() => adjustItem(it, 1)} className="btn btn-contorno" aria-label={`Sumar 1 a ${it.name}`} style={{ width: 38, height: 38, padding: 0 }}><Icon name="plus" size={18} /></button>
                                 </div>
@@ -690,8 +704,8 @@ export default function Home() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: mv.delta > 0 ? COLORS.success : COLORS.primary }}>{mv.delta > 0 ? `+${mv.delta}` : mv.delta}</div>
-                      <div style={{ fontSize: 12, color: COLORS.muted, whiteSpace: 'nowrap' }}>{mv.antes} → {mv.despues}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: mv.delta > 0 ? COLORS.success : COLORS.primary }}>{mv.delta > 0 ? `+${formatQty(mv.delta)}` : formatQty(mv.delta)}</div>
+                      <div style={{ fontSize: 12, color: COLORS.muted, whiteSpace: 'nowrap' }}>{formatQty(mv.antes)} → {formatQty(mv.despues)}</div>
                     </div>
                     <button data-guide="mov-delete" onClick={() => deleteMovementRow(mv)} className="btn btn-peligro btn-sm" aria-label={`Eliminar movimiento de ${mv.item.name}`} title="Eliminar" style={{ padding: '0 8px' }}><Icon name="trash" size={16} /></button>
                   </div>
@@ -714,6 +728,7 @@ export default function Home() {
                       <Field label="Nombre" flex="2 1 180px"><input className="campo" value={editCatForm.name} onChange={(e) => setEditCatForm((f) => ({ ...f, name: e.target.value }))} /></Field>
                       <Field label="Unidad" flex="1 1 140px"><input className="campo" value={editCatForm.unit} onChange={(e) => setEditCatForm((f) => ({ ...f, unit: e.target.value }))} /></Field>
                       <Field label="Características (separadas por comas)" flex="1 1 100%"><input className="campo" value={editCatForm.schema} onChange={(e) => setEditCatForm((f) => ({ ...f, schema: e.target.value }))} /></Field>
+                      <HalfToggle checked={editCatForm.allowHalf} onChange={(v) => setEditCatForm((f) => ({ ...f, allowHalf: v }))} />
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button onClick={() => saveEditCategory(cat)} className="btn btn-primario">Guardar</button>
                         <button onClick={() => setEditingCat(null)} className="btn btn-contorno">Cancelar</button>
@@ -723,11 +738,11 @@ export default function Home() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                       <div>
                         <div style={{ fontSize: 15, fontWeight: 600 }}>{cat.name}</div>
-                        <div style={meta}>{cat.unit} · {count} artículo(s){schema.length > 0 && ` · ${schema.join(', ')}`}</div>
+                        <div style={meta}>{cat.unit}{cat.allowHalf && ' · medias piezas'} · {count} artículo(s){schema.length > 0 && ` · ${schema.join(', ')}`}</div>
                       </div>
                       {groupCanModify && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button data-guide="cat-edit" onClick={() => { setEditingCat(cat.id); setEditCatForm({ name: cat.name, unit: cat.unit, schema: schema.join(', ') }); }} className="btn btn-fantasma btn-sm"><Icon name="pencil" size={14} />Editar</button>
+                          <button data-guide="cat-edit" onClick={() => { setEditingCat(cat.id); setEditCatForm({ name: cat.name, unit: cat.unit, schema: schema.join(', '), allowHalf: !!cat.allowHalf }); }} className="btn btn-fantasma btn-sm"><Icon name="pencil" size={14} />Editar</button>
                           <button data-guide="cat-delete" onClick={() => deleteCategoryRow(cat)} className="btn btn-peligro btn-sm"><Icon name="trash" size={14} />Eliminar</button>
                         </div>
                       )}
@@ -744,6 +759,7 @@ export default function Home() {
                   <Field label="Nombre" flex="2 1 180px"><input className="campo" placeholder="p. ej. Acrílicos" value={newCat.name} onChange={(e) => setNewCat((c) => ({ ...c, name: e.target.value }))} /></Field>
                   <Field label="Unidad" flex="1 1 140px"><input className="campo" placeholder="piezas" value={newCat.unit} onChange={(e) => setNewCat((c) => ({ ...c, unit: e.target.value }))} /></Field>
                   <Field label="Características (opcional)" flex="1 1 100%"><input className="campo" placeholder="p. ej. Color, Espesor" value={newCat.schema} onChange={(e) => setNewCat((c) => ({ ...c, schema: e.target.value }))} /></Field>
+                  <HalfToggle checked={newCat.allowHalf} onChange={(v) => setNewCat((c) => ({ ...c, allowHalf: v }))} />
                 </div>
                 <button onClick={addCategory} className="btn btn-primario" style={{ marginTop: 14 }}>Agregar</button>
               </div>

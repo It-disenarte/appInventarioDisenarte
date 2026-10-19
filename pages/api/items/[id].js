@@ -30,7 +30,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ item: updated });
     }
 
-    const d = Math.trunc(Number(body.delta) || 0);
+    // Medias piezas solo en categorías con allowHalf; se redondea a pasos de 0.5 (exactos en Float).
+    const d = item.category.allowHalf ? Math.round((Number(body.delta) || 0) * 2) / 2 : Math.trunc(Number(body.delta) || 0);
     if (d === 0) return res.status(400).json({ error: 'Cantidad inválida.' });
 
     // El increment es atómico y bloquea la fila hasta el fin de la transacción,

@@ -13,8 +13,9 @@ export default async function handler(req, res) {
   if (!canModify(session.role, category.group.area)) return res.status(403).json({ error: 'No tienes permiso sobre esta área.' });
 
   if (req.method === 'PATCH') {
-    const { name, unit, schema } = req.body || {};
+    const { name, unit, schema, allowHalf } = req.body || {};
     const data = {};
+    if (allowHalf !== undefined) data.allowHalf = Boolean(allowHalf);
     if (name !== undefined) { if (!String(name).trim()) return res.status(400).json({ error: 'El nombre es obligatorio.' }); data.name = String(name).trim(); }
     if (unit !== undefined) data.unit = String(unit).trim() || 'piezas';
     if (schema !== undefined) data.schema = cleanSchema(schema);

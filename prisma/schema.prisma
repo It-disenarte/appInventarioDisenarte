@@ -29,19 +29,21 @@ model Group {
 }
 
 model Category {
-  id      Int    @id @default(autoincrement())
-  name    String
-  unit    String
-  schema  Json   @default("[]")
-  groupId Int
-  group   Group  @relation(fields: [groupId], references: [id])
-  items   Item[]
+  id        Int     @id @default(autoincrement())
+  name      String
+  unit      String
+  schema    Json    @default("[]")
+  // true en materiales que se cortan (acrílico, MDF): sus artículos permiten descontar media pieza.
+  allowHalf Boolean @default(false)
+  groupId   Int
+  group     Group   @relation(fields: [groupId], references: [id])
+  items     Item[]
 }
 
 model Item {
   id              Int        @id @default(autoincrement())
   name            String
-  qty             Int
+  qty             Float // en pasos de 0.5 (medias piezas); entero si la categoría no tiene allowHalf
   reorder         Int
   characteristics Json       @default("{}")
   codigo          String?
@@ -62,9 +64,9 @@ model Movement {
   itemId  Int
   item    Item     @relation(fields: [itemId], references: [id])
   tipo    String
-  delta   Int
-  antes   Int
-  despues Int
+  delta   Float
+  antes   Float
+  despues Float
   usuario String
   fecha   DateTime @default(now())
 }

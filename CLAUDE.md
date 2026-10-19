@@ -30,7 +30,7 @@ App web interna de inventario para Diseñarte México (agencia de publicidad, Sa
 - `components/ConfirmDialog.js`: diálogo de confirmación con la marca. No usar `window.confirm`/`alert`; en `index.js` se usa `if (!(await ask({ title, message, confirmLabel, danger }))) return;`.
 - `components/LoadingScreen.js`: pantalla de arranque y `LoadingOverlay` (tarjeta con spinner y mensaje en gerundio, entra con 180 ms de retraso). En `index.js`, `withBusy(fn, 'Eliminando…')` la muestra en cada operación con servidor (por defecto "Guardando…").
 - `components/Brand.js` (ícono + "Inventario" + "DISEÑARTE MÉXICO") e `components/Icon.js` (íconos de línea con paths de lucide).
-- `prisma/schema.prisma`: User(mustChangePassword), Group(area), Category(unit, schema Json), Item(qty, reorder, characteristics Json, codigo, metraje, proveedor, descripcion: texto opcional; caducidad: fecha opcional, la UI avisa desde 30 días antes), Movement(tipo, delta, antes, despues, usuario, fecha).
+- `prisma/schema.prisma`: User(mustChangePassword), Group(area), Category(unit, schema Json, allowHalf: con true sus artículos muestran el botón −½ para material que se corta), Item(qty Float en pasos de 0.5, reorder, characteristics Json, codigo, metraje, proveedor, descripcion: texto opcional; caducidad: fecha opcional, la UI avisa desde 30 días antes), Movement(tipo, delta, antes, despues: Float, usuario, fecha). Las cantidades se muestran con `formatQty` (`lib/itemFields.js`): 1.5 → "1½".
 - `prisma/seed.js`: crea solo el admin `it@disenartemx.com` y grupos/categorías de ejemplo, solo si no hay grupos. El usuario borra los datos de ejemplo desde la app.
 
 ## Roles y permisos (regla central en `lib/permissions.js` → `canModify(role, area)`)
